@@ -311,10 +311,10 @@ function strokeTo(p) {
 // S.work shows the photo with the patch pasted; Stamp keeps it and lets you patch again.
 function startPatch() {
   const W = S.img.width, H = S.img.height;
-  $('#brushSize').value = 140;
+  $('#brushSize').value = 44; // opens small; Patch size makes it bigger
   S.R = Math.max(3, brushPx() / 2 / S.view.scale);
   S.dst = { x: W * 0.45, y: H * 0.45 };
-  S.src = { x: Math.min(W - S.R, S.dst.x + S.R * 2.4), y: S.dst.y };
+  S.src = { x: Math.min(W - S.R, S.dst.x + S.R * 3), y: S.dst.y };
   S.flip = false;
   $('#patchFlip').classList.remove('on');
   S.work = copyCanvas(S.img);
@@ -379,21 +379,14 @@ function drawPatchCircles(cx) {
     cx.lineTo(b.x - (dx / len) * r, b.y - (dy / len) * r);
     cx.setLineDash([4, 4]); cx.lineWidth = 1.5; cx.strokeStyle = 'rgba(255,255,255,.8)'; cx.stroke();
   }
-  for (const [c, dash, label] of [[a, [7, 5], 'Copy from'], [b, [], 'Paste here']]) {
+  // Dashed circle = copy from, solid circle = paste here. No labels: the circles speak for themselves.
+  for (const [c, dash] of [[a, [6, 4]], [b, []]]) {
     cx.setLineDash(dash);
     cx.beginPath(); cx.arc(c.x, c.y, r, 0, Math.PI * 2);
-    cx.lineWidth = 4; cx.strokeStyle = 'rgba(0,0,0,.4)'; cx.stroke();
-    cx.lineWidth = 2; cx.strokeStyle = '#fff'; cx.stroke();
-    cx.setLineDash([]);
-    cx.font = '600 12px -apple-system, Helvetica, Arial, sans-serif';
-    cx.textAlign = 'center';
-    const ty = label === 'Paste here' ? c.y + r + 16 : c.y - r - 8;
-    const tw = cx.measureText(label).width + 12;
-    cx.fillStyle = 'rgba(0,0,0,.6)';
-    cx.fillRect(c.x - tw / 2, ty - 10, tw, 18);
-    cx.fillStyle = '#fff';
-    cx.fillText(label, c.x, ty + 3);
+    cx.lineWidth = 3.5; cx.strokeStyle = 'rgba(0,0,0,.4)'; cx.stroke();
+    cx.lineWidth = 1.8; cx.strokeStyle = '#fff'; cx.stroke();
   }
+  cx.setLineDash([]);
   cx.restore();
 }
 

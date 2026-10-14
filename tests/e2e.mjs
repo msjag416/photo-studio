@@ -336,8 +336,8 @@ async function run(engine, devName) {
     const iw = Number(process.env.PHOTO_SIZE || 512), k = iw / 512;
     const g = async () => { const r = await page.locator('#brushStage').boundingBox(); const s = Math.min((r.width - 24) / iw, (r.height - 24) / iw); return { s, P: ([x, y]) => [r.x + (r.width - iw * s) / 2 + x * k * s, r.y + (r.height - iw * s) / 2 + y * k * s] }; };
     const G = await g();
-    const R0 = 70 / G.s / k; // starting circle radius, in 512-px terms
-    const dst0 = [512 * 0.45, 512 * 0.45], src0 = [Math.min(512 - R0, dst0[0] + R0 * 2.4), dst0[1]];
+    const R0 = 22 / G.s / k; // starting circle radius, in 512-px terms
+    const dst0 = [512 * 0.45, 512 * 0.45], src0 = [Math.min(512 - R0, dst0[0] + R0 * 3), dst0[1]];
     await page.locator('#brushSize').fill(String(Math.round(40 * k * G.s))); // radius 20 (512 terms)
     await page.locator('#brushSize').dispatchEvent('input');
     const drag = async (a, c) => { await page.mouse.move(...G.P(a)); await page.mouse.down(); await page.mouse.move(...G.P(c), { steps: 10 }); await page.mouse.up(); await page.waitForTimeout(150); };

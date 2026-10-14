@@ -60,7 +60,7 @@ To stay smooth, the editor draws layers at up to 1400 pixels and remembers the l
 On every brush screen, two fingers zoom up to 16 times and move around, so small spots like a blemish are easy to brush. Fit zooms back out. Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
 
 **Patch.** The Patch tool (in the Retouch section) copies one round area of the photo onto another spot, for example a patch of hair moved to the hairline to make a widow's peak. It uses the same full-screen screen as the brushes, so two-finger zoom, Fit, Undo, the X and the check mark work as usual.
-* The screen shows two linked circles. Drag the dashed **Copy from** circle onto what you want to copy and the solid **Paste here** circle to where it should go. Touching anywhere else moves Paste here to that spot.
+* The screen shows two linked circles. The circles open small and have no labels. Drag the dashed circle (copy from) onto what you want to copy and the solid circle (paste here) to where it should go. Touching anywhere else moves Paste here to that spot.
 * The preview updates as you drag. The copy has a soft round edge, so it blends in.
 * **Patch size** sets the circles' size, **Edge softness** how gently the copy fades in, and **Flip the copy** mirrors it.
 * **Stamp patch** keeps it so you can patch again somewhere else. Undo takes back one stamp, and the check mark keeps everything, including an unstamped patch.
