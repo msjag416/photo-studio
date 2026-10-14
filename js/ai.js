@@ -1,0 +1,244 @@
+// The two AI models, run inside the browser for free with onnxruntime-web.
+// Main engine: WebAssembly on the CPU, single thread (safe on iPad and iPhone).
+// Backup engine: WebGL (graphics chip), only used if the CPU engine fails to start.
+import { makeCanvas, ctx2d, busy } from './util.js';
+
+const BASE = new URL('../', import.meta.url).href;
+const MODELS = {
+  bg: { url: BASE + 'models/u2netp.onnx', label: 'background tool' },
+  erase: { url: BASE + 'models/migan.onnx', label: 'object removal tool' },
+};
+const sessions = {};
+let engine = 'wasm';
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = res;
+    s.onerror = () => rej(new Error('Could not load ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function loadOrt() {
+  if (window.ort) return window.ort;
+  await loadScript(BASE + 'vendor/ort.wasm.min.js');
+  const ort = window.ort;
+  ort.env.wasm.wasmPaths = BASE + 'vendor/';
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.proxy = false;
+  return ort;
+}
+
+// Download a model with a progress bar. The browser keeps a copy, so later visits are faster.
+async function download(url, label) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed (${res.status}) for ${url}`);
+  const total = Number(res.headers.get('content-length')) || 0;
+  if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader();
+  const out = new Uint8Array(total);
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out.set(value, got);
+    got += value.length;
+    busy(`Getting the ${label} ready (first time only)…`, got / total);
+  }
+  return out;
+}
+
+async function getSession(key) {
+  if (sessions[key]) return sessions[key];
+  const m = MODELS[key];
+  busy(`Getting the ${m.label} ready…`, 0);
+  let ort = await loadOrt();
+  const bytes = await download(m.url, m.label);
+  busy(`Starting the ${m.label}…`);
+  try {
+    if (engine !== 'wasm') throw new Error('skip');
+    sessions[key] = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+  } catch (wasmErr) {
+    // Backup plan: the WebGL engine.
+    console.warn('CPU engine failed, trying WebGL', wasmErr);
+    engine = 'webgl';
+    if (!window.ortWebgl) {
+      const keep = window.ort;
+      window.ort = undefined;
+      await loadScript(BASE + 'vendor/ort.webgl.min.js');
+      window.ortWebgl = window.ort;
+      window.ort = keep;
+    }
+    sessions[key] = await window.ortWebgl.InferenceSession.create(bytes, { executionProviders: ['webgl'] });
+    sessions[key]._ort = window.ortWebgl;
+  }
+  if (!sessions[key]._ort) sessions[key]._ort = ort;
+  return sessions[key];
+}
+
+// ---------------- Background removal (U2-Net-p, 320 x 320) ----------------
+// Returns a mask canvas the same size as the photo: see-through where the background was.
+export async function removeBackground(src) {
+  const sess = await getSession('bg');
+  const ort = sess._ort;
+  busy('Removing the background…');
+  const S = 320;
+  const small = makeCanvas(S, S);
+  const sc = ctx2d(small);
+  sc.imageSmoothingQuality = 'high';
+  sc.drawImage(src, 0, 0, S, S);
+  const px = sc.getImageData(0, 0, S, S).data;
+  let max = 1;
+  for (let i = 0; i < px.length; i += 4) max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+  const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
+  const input = new Float32Array(3 * S * S);
+  for (let i = 0, p = 0; p < S * S; i += 4, p++) {
+    for (let ch = 0; ch < 3; ch++) input[ch * S * S + p] = (px[i + ch] / max - mean[ch]) / std[ch];
+  }
+  const feeds = { [sess.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, S, S]) };
+  const out = await sess.run(feeds);
+  const pred = out[sess.outputNames[0]].data;
+  let lo = Infinity, hi = -Infinity;
+  for (const v of pred) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const range = hi - lo || 1;
+  const m = sc.createImageData(S, S);
+  for (let p = 0; p < S * S; p++) {
+    const v = (pred[p] - lo) / range;
+    // Gentle curve: drop faint haze, keep soft edges.
+    const a = Math.min(1, Math.max(0, (v - 0.12) / 0.76));
+    m.data[p * 4] = m.data[p * 4 + 1] = m.data[p * 4 + 2] = 255;
+    m.data[p * 4 + 3] = Math.round(a * 255);
+  }
+  sc.putImageData(m, 0, 0);
+  const mask = makeCanvas(src.width, src.height);
+  const mc = ctx2d(mask);
+  mc.imageSmoothingQuality = 'high';
+  mc.drawImage(small, 0, 0, mask.width, mask.height);
+  return mask;
+}
+
+// ---------------- Object removal (MI-GAN) ----------------
+// paint: canvas the same size as img; anything painted (alpha > 0) is removed.
+// Returns a new canvas with the painted area filled in to match its surroundings.
+export async function removeObjects(img, paint) {
+  const W = img.width, H = img.height;
+  const pd = ctx2d(paint).getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (pd[(y * W + x) * 4 + 3] > 10) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return img; // nothing painted
+
+  const sess = await getSession('erase');
+  const ort = sess._ort;
+  busy('Removing the object…');
+
+  // The whole photo goes to the model: it finds the hole and zooms in on it by itself.
+  // (Tests showed this fills much more cleanly than cropping around the object first.)
+  // Very large photos are shrunk to save memory on phones and tablets.
+  const k = Math.min(1, 2048 / Math.max(W, H));
+  const w = Math.round(W * k), h = Math.round(H * k);
+  const r = Math.max(1, Math.max(w, h) / 512); // sizes below are in 512-px terms
+
+  const small = makeCanvas(w, h);
+  const cc = ctx2d(small);
+  cc.imageSmoothingQuality = 'high';
+  cc.drawImage(img, 0, 0, w, h);
+  const mcan = makeCanvas(w, h);
+  const mctx = ctx2d(mcan);
+  mctx.drawImage(paint, 0, 0, w, h);
+  const ip = cc.getImageData(0, 0, w, h).data;
+  const mp = mctx.getImageData(0, 0, w, h).data;
+  const n = w * h;
+
+  // Hole = painted area. Small gaps between brush strokes are closed (grow, then shrink back),
+  // and the hole grows a few pixels so no edge of the object is left behind. Leftover bits of
+  // the object would otherwise be smeared into the fill.
+  let hole = new Uint8Array(n);
+  for (let p = 0; p < n; p++) hole[p] = mp[p * 4 + 3] > 8 ? 1 : 0;
+  hole = shrink(grow(hole, w, h, Math.round(12 * r)), w, h, Math.round(8 * r));
+
+  const imageT = new Uint8Array(3 * n);
+  const maskT = new Uint8Array(n);
+  for (let p = 0; p < n; p++) {
+    imageT[p] = ip[p * 4];
+    imageT[n + p] = ip[p * 4 + 1];
+    imageT[2 * n + p] = ip[p * 4 + 2];
+    maskT[p] = hole[p] ? 0 : 255; // 255 = keep, 0 = remove
+  }
+  const out = await sess.run({
+    image: new ort.Tensor('uint8', imageT, [1, 3, h, w]),
+    mask: new ort.Tensor('uint8', maskT, [1, 1, h, w]),
+  });
+  const res = out[sess.outputNames[0]].data;
+
+  // Only the hole (with soft edges) is taken from the model; everything else stays untouched.
+  const soft = softEdge(grow(hole, w, h, Math.round(2 * r)), w, h, Math.round(2 * r));
+  const patch = cc.createImageData(w, h);
+  for (let p = 0; p < n; p++) {
+    patch.data[p * 4] = res[p];
+    patch.data[p * 4 + 1] = res[n + p];
+    patch.data[p * 4 + 2] = res[2 * n + p];
+    patch.data[p * 4 + 3] = Math.round(soft[p] * 255);
+  }
+  const pc = makeCanvas(w, h);
+  ctx2d(pc).putImageData(patch, 0, 0);
+
+  const result = makeCanvas(W, H);
+  const rc = ctx2d(result);
+  rc.drawImage(img, 0, 0);
+  rc.imageSmoothingQuality = 'high';
+  rc.drawImage(pc, 0, 0, W, H);
+  return result;
+}
+
+// Grow a 0/1 mask outward by r pixels (square shape). Fast: one pass across, one pass down.
+function grow(m, w, h, r) {
+  if (r <= 0) return m;
+  const line = (get, set, len) => {
+    let last = -1e9;
+    const near = new Int32Array(len);
+    for (let i = 0; i < len; i++) { if (get(i)) last = i; near[i] = i - last; }
+    last = 1e9;
+    for (let i = len - 1; i >= 0; i--) { if (get(i)) last = i; set(i, Math.min(near[i], last - i) <= r ? 1 : 0); }
+  };
+  const a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) line(x => m[y * w + x], (x, v) => (a[y * w + x] = v), w);
+  for (let x = 0; x < w; x++) line(y => a[y * w + x], (y, v) => (b[y * w + x] = v), h);
+  return b;
+}
+
+// Shrink a 0/1 mask inward by r pixels.
+function shrink(m, w, h, r) {
+  return grow(m.map(v => 1 - v), w, h, r).map(v => 1 - v);
+}
+
+// Turn a 0/1 mask into soft 0..1 values (two box blurs using running sums).
+function softEdge(m, w, h, r) {
+  let a = Float32Array.from(m);
+  const blur = (get, set, len) => {
+    let s = 0;
+    const buf = new Float32Array(len);
+    for (let i = 0; i < len; i++) buf[i] = get(i);
+    for (let i = -r; i <= r; i++) s += buf[Math.min(len - 1, Math.max(0, i))];
+    for (let i = 0; i < len; i++) {
+      set(i, s / (2 * r + 1));
+      s += buf[Math.min(len - 1, i + r + 1)] - buf[Math.max(0, i - r)];
+    }
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    const t = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) blur(x => a[y * w + x], (x, v) => (t[y * w + x] = v), w);
+    for (let x = 0; x < w; x++) blur(y => t[y * w + x], (y, v) => (a[y * w + x] = v), h);
+  }
+  // Keep the centre of the hole fully replaced.
+  for (let p = 0; p < w * h; p++) if (m[p] && a[p] > 0.5) a[p] = Math.min(1, a[p] * 1.6);
+  return a;
+}

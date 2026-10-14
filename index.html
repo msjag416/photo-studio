@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#FAF7F2">
+<title>Photo Studio</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- Hidden photo pickers. Buttons that open photos are <label for="..."> so iPhone and iPad allow the picker. -->
+<div class="file-inputs">
+  <input type="file" id="fileEdit" accept="image/*">
+  <input type="file" id="fileBg" accept="image/*">
+  <input type="file" id="fileObj" accept="image/*">
+  <input type="file" id="fileAdd" accept="image/*">
+</div>
+
+<!-- ============ HOME ============ -->
+<section id="home" class="screen active">
+  <header class="home-head">
+    <div class="brand"><span class="brand-mark"></span>Photo Studio</div>
+  </header>
+  <main class="home-main">
+    <h2 class="home-title">What would you like to do?</h2>
+    <div class="tiles">
+      <label class="tile" for="fileBg"><i data-icon="cutout"></i><span>Remove background</span></label>
+      <label class="tile" for="fileObj"><i data-icon="eraser"></i><span>Remove objects</span></label>
+      <label class="tile" for="fileEdit"><i data-icon="image"></i><span>Edit a photo</span></label>
+      <button class="tile" data-action="blank"><i data-icon="square"></i><span>Blank canvas</span></button>
+    </div>
+    <h3 class="recent-title" id="recentTitle" hidden>Recent projects</h3>
+    <div class="recent" id="recent"></div>
+  </main>
+  <button class="fab" id="createBtn" aria-label="Create"><i data-icon="plus"></i></button>
+</section>
+
+<!-- Create menu -->
+<div class="sheet-wrap" id="createSheet" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><b>Create</b><button class="icon-btn" data-close aria-label="Close"><i data-icon="close"></i></button></div>
+    <label class="menu-row" for="fileEdit"><i data-icon="image"></i>Photo</label>
+    <label class="menu-row" for="fileBg"><i data-icon="cutout"></i>Remove background from a photo</label>
+    <div class="menu-sub">Blank canvas</div>
+    <div class="sizes">
+      <button class="size-btn" data-size="1080x1080"><span class="ratio" style="aspect-ratio:1/1"></span>Square<small>1080 × 1080</small></button>
+      <button class="size-btn" data-size="1080x1350"><span class="ratio" style="aspect-ratio:4/5"></span>Post<small>1080 × 1350</small></button>
+      <button class="size-btn" data-size="1080x1920"><span class="ratio" style="aspect-ratio:9/16"></span>Story<small>1080 × 1920</small></button>
+      <button class="size-btn" data-size="1920x1080"><span class="ratio" style="aspect-ratio:16/9"></span>Wide<small>1920 × 1080</small></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ EDITOR ============ -->
+<section id="editor" class="screen">
+  <header class="topbar">
+    <button class="icon-btn" id="backBtn" aria-label="Back"><i data-icon="back"></i></button>
+    <button class="icon-btn" id="undoBtn" aria-label="Undo"><i data-icon="undo"></i></button>
+    <button class="icon-btn" id="redoBtn" aria-label="Redo"><i data-icon="redo"></i></button>
+    <span class="spacer"></span>
+    <label class="icon-btn" for="fileAdd" aria-label="Add photo"><i data-icon="addimage"></i></label>
+    <button class="icon-btn" id="addTextBtn" aria-label="Add text"><i data-icon="text"></i></button>
+    <button class="icon-btn" id="layersBtn" aria-label="Layers"><i data-icon="layers"></i></button>
+    <button class="save-btn" id="saveBtn">Save</button>
+  </header>
+  <div class="editor-body">
+    <div class="stage" id="stage">
+      <canvas id="view"></canvas>
+      <button class="float-btn" id="refineBtn" hidden><i data-icon="brush"></i>Refine edges</button>
+      <div class="pick-hint" id="pickHint" hidden>Tap the photo to pick a colour</div>
+    </div>
+    <aside class="panel" id="panel"></aside>
+  </div>
+</section>
+
+<!-- ============ BRUSH SCREEN (refine edges + remove objects) ============ -->
+<section id="brush" class="screen dark">
+  <header class="topbar dark">
+    <button class="icon-btn" id="brushCancel" aria-label="Cancel"><i data-icon="close"></i></button>
+    <b class="screen-title" id="brushTitle"></b>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="brushUndo" aria-label="Undo"><i data-icon="undo"></i></button>
+    <button class="icon-btn ok" id="brushDone" aria-label="Apply"><i data-icon="check"></i></button>
+  </header>
+  <div class="brush-stage" id="brushStage">
+    <canvas id="brushView"></canvas>
+    <div class="hint" id="brushHint"></div>
+  </div>
+  <footer class="brush-tools">
+    <div class="seg" id="brushModes">
+      <button data-mode="erase" class="on">Erase</button>
+      <button data-mode="restore">Restore</button>
+    </div>
+    <label class="slider-row">Brush size<input type="range" id="brushSize" min="4" max="120" value="30"></label>
+  </footer>
+</section>
+
+<!-- ============ TEXT SCREEN ============ -->
+<section id="textScreen" class="screen dark">
+  <header class="topbar dark">
+    <button class="icon-btn" id="textCancel" aria-label="Cancel"><i data-icon="close"></i></button>
+    <span class="spacer"></span>
+    <div class="seg small" id="alignBtns">
+      <button data-align="left" aria-label="Align left"><i data-icon="alignleft"></i></button>
+      <button data-align="center" class="on" aria-label="Align centre"><i data-icon="aligncenter"></i></button>
+      <button data-align="right" aria-label="Align right"><i data-icon="alignright"></i></button>
+    </div>
+    <span class="spacer"></span>
+    <button class="icon-btn ok" id="textDone" aria-label="Done"><i data-icon="check"></i></button>
+  </header>
+  <div class="text-stage"><textarea id="textInput" rows="3" placeholder="Type something" autocapitalize="sentences"></textarea></div>
+  <footer class="text-tools">
+    <div class="chips" id="fontRow"></div>
+    <div class="swatches" id="textColors"></div>
+  </footer>
+</section>
+
+<!-- ============ CROP SCREEN ============ -->
+<section id="cropScreen" class="screen dark">
+  <header class="topbar dark">
+    <button class="icon-btn" id="cropCancel" aria-label="Cancel"><i data-icon="close"></i></button>
+    <b class="screen-title">Crop</b>
+    <span class="spacer"></span>
+    <button class="icon-btn ok" id="cropDone" aria-label="Apply"><i data-icon="check"></i></button>
+  </header>
+  <div class="brush-stage" id="cropStage"><canvas id="cropView"></canvas></div>
+  <footer class="brush-tools"><div class="chips" id="cropRatios"></div></footer>
+</section>
+
+<!-- Layers sheet -->
+<div class="sheet-wrap" id="layersSheet" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><b>Layers</b><button class="icon-btn" data-close aria-label="Close"><i data-icon="close"></i></button></div>
+    <div id="layerList"></div>
+  </div>
+</div>
+
+<!-- Save sheet -->
+<div class="sheet-wrap" id="saveSheet" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><b>Save your picture</b><button class="icon-btn" data-close aria-label="Close"><i data-icon="close"></i></button></div>
+    <div class="seg wide" id="formatBtns">
+      <button data-format="png" class="on">PNG<small>keeps see-through areas</small></button>
+      <button data-format="jpg">JPG<small>smaller file, white background</small></button>
+    </div>
+    <button class="primary" id="downloadBtn">Download</button>
+    <button class="secondary" id="shareBtn" hidden>Share or save to Photos</button>
+  </div>
+</div>
+
+<!-- Busy and error messages -->
+<div class="busy" id="busy" hidden><div class="busy-box"><div class="spinner"></div><div id="busyText">Working…</div><div class="bar"><div id="busyBar"></div></div></div></div>
+<div class="error" id="error" hidden>
+  <div class="error-box">
+    <b id="errorTitle">Something went wrong</b>
+    <p id="errorText"></p>
+    <details><summary>Details</summary><code id="errorDetails"></code></details>
+    <button class="primary" id="errorOk">OK</button>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -130,7 +130,7 @@ Screens that create or change data: Create menu makes a Project. Add photo / Add
 * onnxruntime-web, WebAssembly CPU engine, single thread. WebGL only as a backup.
 * Background removal: U2-Net-p (u2netp.onnx, 4.5 MB, 320x320 input). Result mask is scaled back up and smoothed, then used as the cut-out.
 * Edge fix: brush paints on the cut-out mask. Erase hides, Restore brings back the original pixels.
-* Object removal: MI-GAN (MIT licence, 512x512, mask 255 = keep, 0 = remove). Crop about 2.2x the painted area, run the model, blend the patch back with soft edges.
+* Object removal: MI-GAN (MIT licence, mask 255 = keep, 0 = remove). Change after testing: the whole photo is passed to the model (it zooms to 512x512 around the hole by itself). Cropping 2.2x around the object first left smeared colour in the fill on large photos. Small gaps in the painting are closed and the hole grows a little, then only the painted area is blended back with soft edges.
 * Model files are stored in the site itself so they load from the same address.
 
 **Phone rules**
