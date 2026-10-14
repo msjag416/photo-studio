@@ -1,7 +1,7 @@
 // Retouch tools for photos of people. No AI: each tool is simple colour math.
 // For every tool (except Reshape) we make an "effect picture": the whole photo with the
 // effect applied everywhere. Brushing reveals that picture only where you paint.
-import { makeCanvas, ctx2d, blurCanvas } from './util.js';
+import { makeCanvas, ctx2d } from './util.js';
 
 export const RETOUCH_TOOLS = [
   { id: 'smooth', name: 'Smooth skin', icon: 'sparkle', strength: 60,
@@ -42,15 +42,30 @@ export function makeEffect(img, toolId, opt, color) {
   const long = Math.max(W, H);
 
   if (toolId === 'smooth') {
-    // Split the photo into fine texture (pores) and broader shading (wrinkles, blotches).
-    // Soften only the broader shading, then put the fine texture back on top.
-    const wide = ctx2d(blurCanvas(img, long * (opt === 'smoother' ? 0.011 : 0.0055))).getImageData(0, 0, W, H).data;
-    const fine = ctx2d(blurCanvas(img, Math.max(1.2, long * 0.0012))).getImageData(0, 0, W, H).data;
-    const keep = opt === 'smoother' ? 0.55 : 0.75; // how much fine texture to keep
-    for (let i = 0; i < s.length; i += 4) {
-      for (let c = 0; c < 3; c++) d[i + c] = wide[i + c] + (s[i + c] - fine[i + c]) * keep;
-      d[i + 3] = s[i + 3];
+    // Edge-preserving smoothing (a "guided filter"), done separately on red, green and blue:
+    // where the skin is even (small differences, like wrinkles and blotches) it is averaged out;
+    // where there are strong edges (eyes, nostrils, lips, hairline) the photo is kept as it is.
+    // Each colour is only averaged with itself, so the skin colour stays exactly the same.
+    // A little of the finest texture (pores) is put back so the skin doesn't look plastic.
+    const r = Math.max(2, Math.round(long * (opt === 'smoother' ? 0.011 : 0.006)));
+    const eps = (opt === 'smoother' ? 20 : 13) ** 2;
+    const keep = opt === 'smoother' ? 0.4 : 0.5;
+    const n = W * H;
+    const I = new Float32Array(n), II = new Float32Array(n);
+    for (let c = 0; c < 3; c++) {
+      for (let i = 0; i < n; i++) { const v = s[i * 4 + c]; I[i] = v; II[i] = v * v; }
+      const mI = boxMean(I, W, H, r), mII = boxMean(II, W, H, r);
+      const A = new Float32Array(n), B = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const v = mII[i] - mI[i] * mI[i];
+        A[i] = v / (v + eps);
+        B[i] = mI[i] - A[i] * mI[i];
+      }
+      const mA = boxMean(A, W, H, r), mB = boxMean(B, W, H, r);
+      const fine = boxMean(I, W, H, 1);
+      for (let i = 0; i < n; i++) d[i * 4 + c] = mA[i] * I[i] + mB[i] + (I[i] - fine[i]) * keep * (1 - mA[i]);
     }
+    for (let i = 0; i < n; i++) d[i * 4 + 3] = s[i * 4 + 3];
   } else {
     const [tr, tg, tb] = color ? hexRgb(color) : [0, 0, 0];
     const ty = lum(tr, tg, tb);
@@ -191,4 +206,29 @@ export function pastePatch(dst, src, s, t, R, soft, flip) {
   const x = Math.round(t.x - size / 2), y = Math.round(t.y - size / 2);
   ctx2d(dst).drawImage(tmp, x, y);
   return { x, y, w: size, h: size };
+}
+
+// Average of each value with its neighbours in a (2r+1) square (one box blur across, one down).
+// Edges reuse the nearest value, so nothing outside the photo leaks in.
+export function boxMean(src, W, H, r) {
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
+  const k = 1 / (2 * r + 1);
+  for (let y = 0; y < H; y++) {
+    const o = y * W;
+    let sum = 0;
+    for (let i = -r; i <= r; i++) sum += src[o + Math.min(W - 1, Math.max(0, i))];
+    for (let x = 0; x < W; x++) {
+      tmp[o + x] = sum * k;
+      sum += src[o + Math.min(W - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0;
+    for (let i = -r; i <= r; i++) sum += tmp[Math.min(H - 1, Math.max(0, i)) * W + x];
+    for (let y = 0; y < H; y++) {
+      out[y * W + x] = sum * k;
+      sum += tmp[Math.min(H - 1, y + r + 1) * W + x] - tmp[Math.max(0, y - r) * W + x];
+    }
+  }
+  return out;
 }

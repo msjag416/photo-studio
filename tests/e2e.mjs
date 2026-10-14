@@ -210,6 +210,25 @@ async function run(engine, devName) {
     { tool: 'reshape', opt: 'move', size: 30, strength: 70, at: [262, 150], rad: 4, strokes: [[[264, 150], [254, 150]]] },
     { tool: 'reshape', opt: 'restore', size: 30, strength: 90, at: [262, 150], rad: 4, strokes: [[[262, 145], [262, 155]]] },
   ];
+  await step('smooth-keeps-colour', async () => {
+    // Smoothing must not change the skin colour (no grey or white cast), in any browser.
+    const r = await page.evaluate(async () => {
+      const u = await import('/js/util.js'); const rt = await import('/js/retouch.js');
+      const img = await u.fileToCanvas(await (await fetch('/tests/person.png')).blob());
+      const box = [195, 115, 30, 20]; // cheek
+      const mean = c => { const d = c.getContext('2d').getImageData(...box).data; const m = [0, 0, 0]; for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) m[k] += d[i + k]; return m.map(v => v / (d.length / 4)); };
+      const sat = m => (Math.max(...m) - Math.min(...m)) / Math.max(...m);
+      const a = mean(img), out = {};
+      for (const opt of ['smooth', 'smoother']) { const b = mean(rt.makeEffect(img, 'smooth', opt)); out[opt] = { shift: Math.max(...a.map((v, k) => Math.abs(v - b[k]))), satBefore: sat(a), satAfter: sat(b) }; }
+      return out;
+    });
+    for (const [k, v] of Object.entries(r)) {
+      if (v.shift > 4) throw new Error(`${k}: colour shifted by ${v.shift.toFixed(1)}`);
+      if (v.satAfter < v.satBefore * 0.93) throw new Error(`${k}: colour got greyer (${v.satBefore.toFixed(3)} -> ${v.satAfter.toFixed(3)})`);
+    }
+    results.push({ tag, name: `  smoothing colour shift ${r.smooth.shift.toFixed(1)} / ${r.smoother.shift.toFixed(1)}`, ok: true, ms: 0 });
+  });
+
   await step('retouch-open', async () => {
     await page.locator('[data-retouch=smooth]').click();
     await page.locator('#brush.active').waitFor();
