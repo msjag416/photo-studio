@@ -63,11 +63,19 @@ async function getSession(key) {
   let ort = await loadOrt();
   const bytes = await download(m.url, m.label);
   busy(`Starting the ${m.label}…`);
+  const tryWasm = () => ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
   try {
     if (engine !== 'wasm') throw new Error('skip');
-    sessions[key] = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    try {
+      sessions[key] = await tryWasm();
+    } catch (first) {
+      // The CPU engine can fail to start once (for example while another AI is loading); try again.
+      console.warn('CPU engine failed, trying again', first);
+      await new Promise(r => setTimeout(r, 400));
+      sessions[key] = await tryWasm();
+    }
   } catch (wasmErr) {
-    // Backup plan: the WebGL engine.
+    // Backup plan: the WebGL engine. (It can't run every model, so keep the first error to show.)
     console.warn('CPU engine failed, trying WebGL', wasmErr);
     engine = 'webgl';
     if (!window.ortWebgl) {
@@ -77,11 +85,28 @@ async function getSession(key) {
       window.ortWebgl = window.ort;
       window.ort = keep;
     }
-    sessions[key] = await window.ortWebgl.InferenceSession.create(bytes, { executionProviders: ['webgl'] });
+    try {
+      sessions[key] = await window.ortWebgl.InferenceSession.create(bytes, { executionProviders: ['webgl'] });
+    } catch (glErr) {
+      engine = 'wasm'; // try the CPU engine again next time
+      throw new Error(`${wasmErr && wasmErr.message ? wasmErr.message : wasmErr} (backup: ${glErr.message || glErr})`);
+    }
     sessions[key]._ort = window.ortWebgl;
   }
   if (!sessions[key]._ort) sessions[key]._ort = ort;
   return sessions[key];
+}
+
+// Run a model. If it fails, forget that engine's session so the next try starts fresh
+// (and goes back to the CPU engine if the backup engine was in use).
+async function runSafe(key, sess, feeds) {
+  try {
+    return await sess.run(feeds);
+  } catch (err) {
+    delete sessions[key];
+    engine = 'wasm';
+    throw err;
+  }
 }
 
 // ---------------- Background removal (U2-Net-p, 320 x 320) ----------------
@@ -104,7 +129,7 @@ export async function removeBackground(src) {
     for (let ch = 0; ch < 3; ch++) input[ch * S * S + p] = (px[i + ch] / max - mean[ch]) / std[ch];
   }
   const feeds = { [sess.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, S, S]) };
-  const out = await sess.run(feeds);
+  const out = await runSafe('bg', sess, feeds);
   const pred = out[sess.outputNames[0]].data;
   let lo = Infinity, hi = -Infinity;
   for (const v of pred) { if (v < lo) lo = v; if (v > hi) hi = v; }
@@ -177,7 +202,7 @@ export async function removeObjects(img, paint) {
     imageT[2 * n + p] = ip[p * 4 + 2];
     maskT[p] = hole[p] ? 0 : 255; // 255 = keep, 0 = remove
   }
-  const out = await sess.run({
+  const out = await runSafe('erase', sess, {
     image: new ort.Tensor('uint8', imageT, [1, 3, h, w]),
     mask: new ort.Tensor('uint8', maskT, [1, 1, h, w]),
   });
