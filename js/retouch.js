@@ -86,7 +86,8 @@ export function makeEffect(img, toolId, opt, color) {
         // Leave very light and very dark spots alone: whites of the eyes, pupils, teeth, shine.
         let w = 1;
         if (kind === 'eyes') w = Math.max(0, 1 - ((y - 95) / 105) ** 2);
-        if (kind === 'lips') w = 1 - Math.min(1, Math.max(0, (y - 180) / 40));
+        // Lips are pinkish-red (much more red than green); teeth are white or cream, so leave those alone.
+        if (kind === 'lips') w = Math.min(1, Math.max(0, (r - g - 25) / 20)) * (1 - Math.min(1, Math.max(0, (y - 215) / 30)));
         r += (nr - r) * w; g += (ng - g) * w; b += (nb - b) * w;
       }
       d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = s[i + 3];

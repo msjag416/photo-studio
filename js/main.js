@@ -7,6 +7,17 @@ import { initScreens } from './screens.js';
 import { listProjects, loadProject, deleteProject } from './store.js';
 
 // Any error that slips through still shows up on screen in plain words.
+// iPad and iPhone Safari ignore "user-scalable=no", so a two-finger pinch would zoom the whole
+// app instead of the photo. Stop the browser's own pinch zoom; the app does its own zooming.
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => { // stop double-tap zoom too
+  const now = Date.now();
+  if (now - lastTouchEnd < 300 && e.target.closest && e.target.closest('.stage, .brush-stage')) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+
 window.addEventListener('error', e => showError('Something went wrong.', e.error || e.message));
 window.addEventListener('unhandledrejection', e => showError('Something went wrong.', e.reason));
 $('#errorOk').onclick = () => ($('#error').hidden = true);

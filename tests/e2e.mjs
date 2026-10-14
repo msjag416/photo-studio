@@ -92,6 +92,23 @@ async function run(engine, devName) {
     await page.screenshot({ path: `${OUT}/${tag}-face-${name}.png`, clip: { x: ox + 150 * s, y: oy + 20 * s, width: 150 * s, height: 175 * s } });
   };
 
+  // A real two-finger pinch (Chrome only: sent as touch events through Chrome's testing tools).
+  const pinch = async (cx, cy, from, to, steps = 12) => {
+    const cdp = await page.context().newCDPSession(page);
+    const pts = d => [{ x: cx - d / 2, y: cy, id: 0 }, { x: cx + d / 2, y: cy, id: 1 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(from) });
+    for (let i = 1; i <= steps; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(from + ((to - from) * i) / steps) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
+  };
+  // Average brightness of the middle of a canvas (to check the photo is still showing).
+  const canvasMiddle = sel => page.evaluate(sel => {
+    const c = document.querySelector(sel), g = c.getContext('2d');
+    const d = g.getImageData(c.width / 2 - 20, c.height / 2 - 20, 40, 40).data;
+    let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2];
+    return t / (d.length / 4) / 3;
+  }, sel);
+
   await page.goto(URL_);
   await step('home', async () => { await page.locator('.tile').first().waitFor(); });
 
@@ -101,6 +118,54 @@ async function run(engine, devName) {
     await idle();
     await page.locator('[data-act=bg]').waitFor();
   });
+
+  if (engine === 'chromium') {
+    await step('pinch-zoom-editor', async () => {
+      const r = await page.locator('#stage').boundingBox();
+      const before = await canvasMiddle('#view');
+      await pinch(r.x + r.width / 2, r.y + r.height / 2, 80, 260);
+      if (await page.locator('#fitBtn').isHidden()) throw new Error('Fit button did not appear after zooming');
+      const after = await canvasMiddle('#view');
+      if (Math.abs(after - 239) < 3) throw new Error('The photo disappeared after zooming');
+      await shot('editor-zoomed');
+      await page.locator('#fitBtn').click();
+      await page.waitForTimeout(150);
+      if (!(await page.locator('#fitBtn').isHidden())) throw new Error('Fit did not reset the zoom');
+      if (Math.abs((await canvasMiddle('#view')) - before) > 2) throw new Error('Picture looks different after Fit');
+    });
+
+    await step('pinch-zoom-remove-blemish', async () => {
+      await page.locator('[data-act=erase]').click();
+      await page.locator('#brush.active').waitFor();
+      const r = await page.locator('#brushStage').boundingBox();
+      const iw = Number(process.env.PHOTO_SIZE || 512);
+      const s = Math.min((r.width - 24) / iw, (r.height - 24) / iw) * iw / 512;
+      const ox = r.x + (r.width - 512 * s) / 2, oy = r.y + (r.height - 512 * s) / 2;
+      // The small name tag on the suit (about 300, 357) stands in for a blemish.
+      const tag = [300, 357];
+      const fx = ox + tag[0] * s, fy = oy + tag[1] * s;
+      const before = await page.evaluate(([x, y]) => { const c = document.querySelector('#brushView'), k = c.width / c.getBoundingClientRect().width, r = c.getBoundingClientRect(); return Array.from(c.getContext('2d').getImageData((x - r.x) * k - 3, (y - r.y) * k - 3, 6, 6).data); }, [fx, fy]);
+      await pinch(fx, fy, 60, 180); // zoom in 3x around the tag
+      if (await page.locator('#brushFit').isHidden()) throw new Error('Fit button did not appear on the brush screen');
+      await shot('brush-zoomed');
+      // While zoomed, one finger paints over the tag (it is now 3x bigger on screen).
+      await page.locator('#brushSize').fill('60');
+      await page.mouse.move(fx - 60, fy);
+      await page.mouse.down();
+      await page.mouse.move(fx + 60, fy, { steps: 10 });
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+      await idle();
+      await shot('brush-zoomed-removed');
+      await page.locator('#brushFit').click();
+      await page.waitForTimeout(150);
+      const after = await page.evaluate(([x, y]) => { const c = document.querySelector('#brushView'), k = c.width / c.getBoundingClientRect().width, r = c.getBoundingClientRect(); return Array.from(c.getContext('2d').getImageData((x - r.x) * k - 3, (y - r.y) * k - 3, 6, 6).data); }, [fx, fy]);
+      const d = diff(before, after);
+      if (d < 8) throw new Error(`The spot did not change after removing it while zoomed (${d.toFixed(1)})`);
+      await page.locator('#brushDone').click();
+      await page.locator('#editor.active').waitFor();
+    });
+  }
 
   await step('remove-background', async () => {
     await page.locator('[data-act=bg]').click();
@@ -139,7 +204,7 @@ async function run(engine, devName) {
     { tool: 'whiten', size: 8, strength: 90, at: [224, 144], rad: 3, strokes: [[[210, 144], [238, 144]]] },
     { tool: 'eyes', color: '#2F9467', size: 7, strength: 90, at: [204, 101], rad: 2, strokes: [[[203, 101], [206, 101]], [[244, 102], [247, 102]]] },
     { tool: 'brighten', size: 10, strength: 90, at: [205, 111], rad: 3, strokes: [[[198, 111], [212, 111]], [[238, 112], [252, 112]]] },
-    { tool: 'makeup', opt: 'lips', color: '#C2185B', size: 6, strength: 90, at: [223, 150], rad: 2, strokes: [[[212, 149], [235, 149]], [[214, 139], [233, 139]]] },
+    { tool: 'makeup', opt: 'lips', color: '#C2185B', size: 6, strength: 90, at: [223, 150], rad: 2, strokes: [[[212, 149], [235, 149]], [[214, 139], [233, 139]], [[212, 144], [236, 144]]], keep: [[220, 146], 1] },
     { tool: 'makeup', opt: 'blush', color: '#E8709A', size: 16, strength: 90, at: [195, 127], rad: 4, strokes: [[[190, 125], [200, 129]], [[250, 125], [260, 129]]] },
     { tool: 'hair', color: '#E6C77D', size: 16, strength: 90, at: [225, 46], rad: 5, strokes: [[[195, 40], [255, 40], [255, 52], [195, 52], [195, 62], [255, 62]]] },
     { tool: 'reshape', opt: 'move', size: 30, strength: 70, at: [262, 150], rad: 4, strokes: [[[264, 150], [254, 150]]] },
@@ -161,12 +226,19 @@ async function run(engine, devName) {
       if (t.color) await page.locator(`#retouchColors [data-color="${t.color}"]`).click();
       await page.locator('#brushStrength').fill(String(t.strength));
       const before = await sample([t.at], t.rad);
+      const keepBefore = t.keep ? (await sample([t.keep[0]], t.keep[1]))[0] : null;
       for (const st of t.strokes) await paint(st, t.size);
       await page.waitForTimeout(100);
       const after = await sample([t.at], t.rad);
       const d = diff(before[0], after[0]);
       await faceShot(name);
       if (d < 2) throw new Error(`${name} changed its spot by only ${d.toFixed(2)} (expected a visible change)`);
+      if (t.keep) {
+        // A spot that must NOT change (lip colour brushed straight across the teeth).
+        const k0 = keepBefore, k1 = (await sample([t.keep[0]], t.keep[1]))[0];
+        const kd = diff(k0, k1);
+        if (kd > 4) throw new Error(`${name} also coloured the teeth (${kd.toFixed(1)})`);
+      }
       const c = diff(controlBefore[0], (await sample(control, 6))[0]);
       if (c > 0.5) throw new Error(`${name} changed the background too (${c.toFixed(2)})`);
     });

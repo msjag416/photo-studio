@@ -110,6 +110,8 @@ function fit() {
   const s = Math.min((r.width - m * 2) / P.w, (r.height - m * 2) / P.h);
   view = { scale: s, ox: (r.width - P.w * s) / 2, oy: (r.height - P.h * s) / 2 };
   view.fitFor = r.width + 'x' + r.height;
+  view.fitScale = s;
+  view.zoomed = false;
 }
 
 let checker;
@@ -157,6 +159,7 @@ function drawNow() {
   if (L && !L.hidden) drawSelection(cx, L);
   if (L && !L.hidden && L.type === 'photo' && L.faces && (L.faces.length > 1 || tool === 'brows')) drawFaceOutlines(cx, L);
   $('#refineBtn').hidden = !(L && L.type === 'photo' && L.mask && !tool);
+  $('#fitBtn').hidden = !view.zoomed;
 }
 
 // Corners of the selected layer on screen, plus the rotate handle.
@@ -303,9 +306,13 @@ function onDown(e) {
   $('#stage').setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, p);
   const L = sel();
-  if (pointers.size === 2 && L) {
+  if (pointers.size === 2) {
+    // Two fingers zoom in and move around the picture (like a magnifier); the photo itself
+    // doesn't change. Undo any small move the first finger already made.
+    if (gesture && gesture.kind === 'move' && gesture.moved && L) { L.x = gesture.x0; L.y = gesture.y0; }
     const [a, b] = [...pointers.values()];
-    gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), scale: L.scale, rot: L.rot, moved: true };
+    gesture = { kind: 'zoom', d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, v0: { ...view } };
+    draw();
     return;
   }
   if (pointers.size > 1) return;
@@ -334,14 +341,21 @@ function onMove(e) {
   e.preventDefault();
   const p = local(e);
   pointers.set(e.pointerId, p);
+  if (gesture && gesture.kind === 'zoom') {
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const g = gesture, v0 = g.v0;
+      const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const scale = Math.min(v0.fitScale * 12, Math.max(v0.fitScale * 0.5, (v0.scale * d) / g.d));
+      const k = scale / v0.scale;
+      view = { ...v0, scale, ox: mx - (g.mx - v0.ox) * k, oy: my - (g.my - v0.oy) * k, zoomed: true };
+      draw();
+    }
+    return;
+  }
   const L = sel();
   if (!gesture || !L) return;
-  if (gesture.kind === 'pinch' && pointers.size === 2) {
-    const [a, b] = [...pointers.values()];
-    const d = Math.hypot(a.x - b.x, a.y - b.y);
-    L.scale = Math.max(0.01, (gesture.scale * d) / gesture.d);
-    L.rot = gesture.rot + Math.atan2(b.y - a.y, b.x - a.x) - gesture.ang;
-  } else if (gesture.kind === 'move') {
+  if (gesture.kind === 'move') {
     const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
     if (Math.hypot(dx, dy) > 3) gesture.moved = true;
     if (gesture.moved) { L.x = gesture.x0 + dx / view.scale; L.y = gesture.y0 + dy / view.scale; }
@@ -987,6 +1001,7 @@ export function initEditor() {
   $('#layersBtn').onclick = openLayers;
   $('#saveBtn').onclick = openSave;
   $('#refineBtn').onclick = doRefine;
+  $('#fitBtn').onclick = () => { fit(); draw(); };
   $('#downloadBtn').onclick = download;
   $('#shareBtn').onclick = share;
   $$('#formatBtns button').forEach(b => (b.onclick = () => {

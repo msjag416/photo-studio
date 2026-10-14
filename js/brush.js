@@ -111,6 +111,8 @@ function fit() {
   const s = Math.min((w - 24) / S.img.width, (h - 24) / S.img.height);
   S.view = { scale: s, ox: (w - S.img.width * s) / 2, oy: (h - S.img.height * s) / 2 };
   S.fitFor = w + 'x' + h;
+  S.fitScale = s;
+  $('#brushFit').hidden = true;
 }
 const toImg = (x, y) => ({ x: (x - S.view.ox) / S.view.scale, y: (y - S.view.oy) / S.view.scale });
 
@@ -294,7 +296,7 @@ function local(e) {
 }
 
 function onDown(e) {
-  if (!S || S.busy) return;
+  if (!S || S.busy || e.target !== $('#brushView')) return; // the Fit button is not a brush stroke
   e.preventDefault();
   $('#brushStage').setPointerCapture(e.pointerId);
   S.pointers.set(e.pointerId, local(e));
@@ -315,7 +317,7 @@ function onDown(e) {
     S.stroke = null;
     S.cursor = null;
     const [a, b] = [...S.pointers.values()];
-    S.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, view: { ...S.view } };
+    S.pinch = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, view: { ...S.view } };
   }
   draw();
 }
@@ -346,9 +348,11 @@ function onMove(e) {
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     const v0 = S.pinch.view;
-    const k = Math.max(0.5, Math.min(12, (v0.scale * d) / S.pinch.d / v0.scale));
-    const scale = v0.scale * k;
+    // Zoom between half size and 16x the fitted size, so the photo can't vanish.
+    const scale = Math.min(S.fitScale * 16, Math.max(S.fitScale * 0.5, (v0.scale * d) / S.pinch.d));
+    const k = scale / v0.scale;
     S.view = { scale, ox: mx - (S.pinch.mx - v0.ox) * k, oy: my - (S.pinch.my - v0.oy) * k };
+    $('#brushFit').hidden = false;
   }
   draw();
 }
@@ -401,6 +405,7 @@ export function initBrush() {
   st.addEventListener('pointerup', onUp);
   st.addEventListener('pointercancel', onUp);
   $('#brushUndo').onclick = onUndo;
+  $('#brushFit').onclick = () => { if (S) { fit(); draw(); } };
   $('#brushCancel').onclick = () => S && !S.busy && close(null);
   $('#brushDone').onclick = () => {
     if (!S || S.busy) return;

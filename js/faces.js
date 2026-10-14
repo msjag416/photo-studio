@@ -15,6 +15,9 @@ function getLandmarker() {
       const files = await FilesetResolver.forVisionTasks(BASE + 'vendor/mediapipe/wasm');
       return FaceLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: BASE + 'models/face_landmarker.task', delegate: 'CPU' },
+        // A normal canvas for its WebGL work. (By default it uses an "offscreen" canvas, which
+        // some Safari versions can't use with WebGL.)
+        canvas: document.createElement('canvas'),
         runningMode: 'IMAGE',
         numFaces: 12,
         minFaceDetectionConfidence: 0.4,

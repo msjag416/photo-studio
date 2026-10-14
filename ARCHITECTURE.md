@@ -30,7 +30,7 @@ tests/e2e.mjs      Automatic test that clicks through every step in real browser
 
 **Opening a photo.** Every "open photo" button is a `<label>` linked to a hidden file picker, because iPhones and iPads block pickers opened by a script. The photo is turned the right way up and shrunk to about 2000 pixels on its long side, so phones don't run out of memory. A new project is made the same size as the photo.
 
-**The editor.** The canvas in the middle shows the project. Tapping a layer selects it and shows corner handles (resize) and a round handle on top (rotate). You can also pinch with two fingers. The tool panel sits on the right on iPad and at the bottom on iPhone. With nothing selected, it shows canvas options (background colour, add space).
+**The editor.** The canvas in the middle shows the project. Tapping a layer selects it and shows corner handles (resize) and a round handle on top (rotate). Two fingers zoom in and move around the picture like a magnifier, without changing the photo, and a Fit button zooms back out. iPad and iPhone Safari ignore the page setting that stops the whole page zooming, so `main.js` blocks Safari's own pinch and double-tap zoom. Otherwise a pinch would zoom the whole app instead of the photo. The tool panel sits on the right on iPad and at the bottom on iPhone. With nothing selected, it shows canvas options (background colour, add space).
 
 **Remove background.** `ai.js` shrinks the photo to 320 × 320 and runs the U2-Net-p model, which scores how likely each pixel is part of the main subject. That score becomes a "mask" the same size as the photo. Where the mask is clear, the photo is see-through and a checkerboard shows. The original photo is never changed, so "Bring back background" just removes the mask.
 
@@ -52,11 +52,11 @@ To stay smooth, the editor draws layers at up to 1400 pixels and remembers the l
 * For every tool except Reshape, the app first makes an "effect picture": the whole photo with the effect applied everywhere. Brushing reveals that picture only where you paint, never stronger than the Strength slider.
 * Smooth skin splits the photo into fine texture (pores) and broader shading (wrinkles, blotches), softens only the broader shading, and puts the fine texture back.
 * Whiten teeth takes out yellow and lightens, but leaves pink gums and lips alone.
-* Eye colour, lip colour and hair colour change the colour but keep the light and dark detail. Eye and lip colour leave very light and very dark spots alone (whites of the eyes, pupils, teeth).
+* Eye colour, lip colour and hair colour change the colour but keep the light and dark detail. Eye colour leaves very light and very dark spots alone (whites of the eyes, pupils). Lip colour only colours pinkish-red pixels (much more red than green), so teeth stay white even when the brush goes over them.
 * Blush is a soft wash of colour with an extra-soft brush edge. Brighten lifts darker tones more than light ones.
 * Reshape > Move slides the pixels under your finger along with it, strongest in the middle of the brush. Restore brushes the original photo back.
 
-Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
+On every brush screen, two fingers zoom up to 16 times and move around, so small spots like a blemish are easy to brush. Fit zooms back out. Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
 
 **Faces.** As soon as a photo opens, `faces.js` looks for faces in the background with MediaPipe Face Landmarker (free, Apache licence). It runs in the browser and marks 478 points on each face: eyebrows, eyes, lips and the face outline.
 * **Finding small faces:** the detector shrinks what it looks at to a small square, so faces in a wide or group photo can become too small to see. So it looks at the whole photo, then at overlapping squares at two sizes, and keeps each person once.
@@ -86,7 +86,7 @@ ONNX Runtime Web runs the models using WebAssembly on the CPU, single thread. Th
 
 * Background model: `models/u2netp.onnx` (4.5 MB, U2-Net small, Apache 2.0)
 * Object removal model: `models/migan.onnx` (29 MB, MI-GAN by Picsart AI Research, MIT)
-* Face points model: `models/face_landmarker.task` (3.7 MB, MediaPipe by Google, Apache 2.0), run by `vendor/mediapipe/` on the CPU
+* Face points model: `models/face_landmarker.task` (3.7 MB, MediaPipe by Google, Apache 2.0), run by `vendor/mediapipe/` on the CPU. It also needs WebGL 2, which current iPhone, iPad and computer browsers have. It's given a normal canvas for that, because some Safari versions can't use WebGL on the "offscreen" canvas it would use otherwise
 
 ## When something goes wrong
 
