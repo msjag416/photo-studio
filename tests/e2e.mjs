@@ -244,26 +244,22 @@ async function run(engine, devName) {
     });
   }
   await step('reshape-follows-finger', async () => {
-    // Drag a small dot 60 px with Reshape: the picture must follow the finger (at least 45 px).
-    const moved = await page.evaluate(async () => {
+    // Grab a dot and drag it 40 px up: the dot must follow (at least 30 px), and a dot on the
+    // other side (like the other mouth corner) must not move at all.
+    const r = await page.evaluate(async () => {
       const u = await import('/js/util.js'); const rt = await import('/js/retouch.js');
-      const c = u.makeCanvas(400, 400), x = c.getContext('2d');
-      x.fillStyle = '#fff'; x.fillRect(0, 0, 400, 400); x.fillStyle = '#000'; x.fillRect(195, 195, 10, 10);
-      const r = 35; let last = { x: 200, y: 200 };
-      for (let k = 1; k <= 15; k++) {
-        const p = { x: 200 + (60 * k) / 15, y: 200 };
-        const n = Math.max(1, Math.ceil(Math.abs(p.x - last.x) / (r * 0.15)));
-        for (let i = 0; i < n; i++) rt.reshapeStep(c, last.x + ((p.x - last.x) * i) / n, 200, (p.x - last.x) / n, 0, r, 0.875);
-        last = p;
-      }
-      const d = x.getImageData(0, 195, 400, 10).data; let sx = 0, cnt = 0;
-      for (let i = 0; i < 4000; i++) if (d[i * 4] < 128) { sx += i % 400; cnt++; }
-      return sx / cnt - 200;
+      const src = u.makeCanvas(400, 400), x = src.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0, 0, 400, 400); x.fillStyle = '#000';
+      x.fillRect(95, 195, 10, 10); x.fillRect(295, 195, 10, 10); // two "mouth corners"
+      const dst = u.makeCanvas(400, 400); dst.getContext('2d').drawImage(src, 0, 0);
+      rt.grabWarp(dst, src, { x: 300, y: 200 }, { x: 0, y: -40 }, 60, { x0: 200, y0: 100, x1: 400, y1: 300 });
+      const cy = (c, x0) => { const d = c.getContext('2d').getImageData(x0 - 5, 0, 10, 400).data; let sy = 0, n = 0; for (let i = 0; i < 4000; i++) if (d[i * 4] < 128) { sy += Math.floor(i / 10); n++; } return sy / n; };
+      return { moved: cy(src, 300) - cy(dst, 300), other: cy(src, 100) - cy(dst, 100) };
     });
-    if (moved < 45) throw new Error(`Reshape only moved the picture ${moved.toFixed(1)} px for a 60 px drag`);
-    results.push({ tag, name: `  reshape moved ${moved.toFixed(1)} px for a 60 px drag`, ok: true, ms: 0 });
+    if (r.moved < 30) throw new Error(`Reshape only moved the spot ${r.moved.toFixed(1)} px for a 40 px drag`);
+    if (Math.abs(r.other) > 0.01) throw new Error(`Reshape also moved the other side (${r.other.toFixed(2)} px)`);
+    results.push({ tag, name: `  reshape moved ${r.moved.toFixed(1)} px for a 40 px drag, other side ${r.other.toFixed(1)} px`, ok: true, ms: 0 });
   });
-
   await step('retouch-undo-apply', async () => {
     // Undo inside the screen takes back the last stroke, then apply with the check mark.
     await page.locator('#brushUndo').click();

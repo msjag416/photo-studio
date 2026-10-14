@@ -6,7 +6,7 @@
 // One finger paints. Two fingers zoom and move the picture.
 import { $, $$, makeCanvas, ctx2d, copyCanvas, showError, busy, nextFrame } from './util.js';
 import { removeObjects } from './ai.js';
-import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, reshapeStep } from './retouch.js';
+import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, grabWarp } from './retouch.js';
 import { faceMask } from './faces.js';
 
 let S = null; // state of the open screen
@@ -81,7 +81,7 @@ function setTool(id) {
   S.faceMask = S.face ? faceMask(S.face, S.img.width, S.img.height, t.id === 'hair' || t.id === 'reshape' ? 'head' : 'face') : null;
   $('#brushStrength').value = t.strength;
   // Reshaping cheeks, lips or a jaw needs a wide, soft brush.
-  if (t.id === 'reshape' && Number($('#brushSize').value) < 70) $('#brushSize').value = 70;
+  if (t.id === 'reshape' && Number($('#brushSize').value) < 120) $('#brushSize').value = 120;
   $$('#retouchTools .chip-btn').forEach(b => b.classList.toggle('on', b.dataset.tool === t.id));
   const on = $('#retouchTools .chip-btn.on');
   if (on && on.offsetParent && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -272,17 +272,21 @@ function keepOutsideFace(x, y, w, h) {
 function strokeTo(p) {
   const r = brushPx() / 2 / S.view.scale;
   if (S.kind === 'retouch' && S.tool.id === 'reshape' && S.opt === 'move') {
-    // Reshape > Move: slide the pixels under the finger along with it, in small steps.
-    const last = S.stroke.last;
-    S.stroke.last = p;
-    if (!last) return;
-    const d = Math.hypot(p.x - last.x, p.y - last.y);
-    const n = Math.max(1, Math.ceil(d / (r * 0.15)));
-    for (let i = 0; i < n; i++) {
-      const cx = last.x + ((p.x - last.x) * i) / n, cy = last.y + ((p.y - last.y) * i) / n;
-      reshapeStep(S.work, cx, cy, (p.x - last.x) / n, (p.y - last.y) / n, r, 0.75 + strength() * 0.25);
-    }
-    keepOutsideFace(Math.min(last.x, p.x) - r - 3, Math.min(last.y, p.y) - r - 3, Math.abs(p.x - last.x) + r * 2 + 6, Math.abs(p.y - last.y) + r * 2 + 6);
+    // Reshape > Move: grab the spot where the finger first touched and drag it. A round area
+    // (the brush circle) moves with the finger as one smooth piece, fading out at the edge.
+    // Each move redraws from the photo as it was when the finger went down, so nothing smears.
+    const st = S.stroke;
+    if (!st.grab) { st.grab = p; st.box = null; return; }
+    const k = 0.35 + 0.65 * strength();
+    const v = { x: (p.x - st.grab.x) * k, y: (p.y - st.grab.y) * k };
+    const R = r * 1.2;
+    const reach = R + Math.hypot(v.x, v.y) + 3;
+    // Area touched now, plus what the last move touched (so it can be put back).
+    const box = { x0: st.grab.x - reach, y0: st.grab.y - reach, x1: st.grab.x + reach, y1: st.grab.y + reach };
+    const all = st.box ? { x0: Math.min(box.x0, st.box.x0), y0: Math.min(box.y0, st.box.y0), x1: Math.max(box.x1, st.box.x1), y1: Math.max(box.y1, st.box.y1) } : box;
+    st.box = box;
+    grabWarp(S.work, S.img, st.grab, v, R, all);
+    keepOutsideFace(all.x0, all.y0, all.x1 - all.x0, all.y1 - all.y0);
     return;
   }
   const last = S.stroke.last;

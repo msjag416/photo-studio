@@ -16,7 +16,7 @@ export const RETOUCH_TOOLS = [
       blush: ['#F08A8A', '#E8709A', '#F3A27C', '#D46A78'] } },
   { id: 'hair', name: 'Hair colour', icon: 'hair', strength: 45,
     colors: ['#3A2418', '#7A4428', '#C98B4E', '#E6C77D', '#A8322B', '#B9BEC6', '#E2609F', '#7D55D0', '#3E6FD1'] },
-  { id: 'reshape', name: 'Reshape', icon: 'reshape', strength: 50,
+  { id: 'reshape', name: 'Reshape', icon: 'reshape', strength: 70,
     opts: [{ id: 'move', name: 'Move' }, { id: 'restore', name: 'Restore' }] },
 ];
 export const toolById = id => RETOUCH_TOOLS.find(t => t.id === id) || RETOUCH_TOOLS[0];
@@ -130,4 +130,41 @@ export function reshapeStep(work, cx, cy, dx, dy, r, strength) {
     }
   }
   c.putImageData(id, x0, y0);
+}
+
+// Reshape: "grab and drag". Points near the grab point g move by v, fading smoothly to nothing at
+// radius R. Every pixel in the box is redrawn from src (the photo before this drag) into dst.
+// Each pixel finds where it came from by reversing the move (a few quick rounds of refinement),
+// which keeps the moved area smooth and in one piece.
+export function grabWarp(dst, src, g, v, R, box) {
+  const W = src.width, H = src.height;
+  const x0 = Math.max(0, Math.floor(box.x0)), y0 = Math.max(0, Math.floor(box.y0));
+  const x1 = Math.min(W, Math.ceil(box.x1)), y1 = Math.min(H, Math.ceil(box.y1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+  const s = ctx2d(src).getImageData(x0, y0, w, h).data;
+  const dc = ctx2d(dst);
+  const out = dc.createImageData(w, h);
+  const d = out.data;
+  const fall = t => (t >= 1 ? 0 : (1 - t * t) * (1 - t * t));
+  const gx = g.x - x0, gy = g.y - y0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let qx = x, qy = y;
+      for (let it = 0; it < 4; it++) {
+        const f = fall(Math.hypot(qx - gx, qy - gy) / R);
+        qx = x - v.x * f; qy = y - v.y * f;
+      }
+      const sx = Math.min(w - 1, Math.max(0, qx)), sy = Math.min(h - 1, Math.max(0, qy));
+      const ix = Math.floor(sx), iy = Math.floor(sy), fx = sx - ix, fy = sy - iy;
+      const ix1 = Math.min(w - 1, ix + 1), iy1 = Math.min(h - 1, iy + 1);
+      const o = (y * w + x) * 4;
+      for (let k = 0; k < 4; k++) {
+        const A = s[(iy * w + ix) * 4 + k], B = s[(iy * w + ix1) * 4 + k];
+        const C = s[(iy1 * w + ix) * 4 + k], D = s[(iy1 * w + ix1) * 4 + k];
+        d[o + k] = (A * (1 - fx) + B * fx) * (1 - fy) + (C * (1 - fx) + D * fx) * fy;
+      }
+    }
+  }
+  dc.putImageData(out, x0, y0);
 }
