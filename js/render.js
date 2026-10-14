@@ -174,7 +174,7 @@ function finish(c, L, s, u) {
 }
 
 // Exact distance transform (Felzenszwalb & Huttenlocher), returns squared distances.
-function edt(f, W, H) {
+export function edt(f, W, H) {
   const n = Math.max(W, H);
   const d = new Float32Array(n), v = new Int32Array(n), z = new Float32Array(n + 1), tmp = new Float32Array(n);
   const pass = (get, set, len) => {

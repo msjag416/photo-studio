@@ -256,6 +256,30 @@ async function run(engine, devName) {
     await page.waitForTimeout(200);
   });
 
+  await step('remove-precision', async () => {
+    // Paint a small dot (radius 12 px) on a full-size 2000 px photo, remove it, and check that
+    // nothing more than 5 px outside the dot changed.
+    const res = await page.evaluate(async () => {
+      const u = await import('/js/util.js'); const ai = await import('/js/ai.js');
+      const img = await u.fileToCanvas(await (await fetch('/tests/person.png')).blob(), 2000);
+      const big = u.makeCanvas(2000, 2000); big.getContext('2d').drawImage(img, 0, 0, 2000, 2000);
+      const paint = u.makeCanvas(2000, 2000), pc = paint.getContext('2d');
+      const cx = 820, cy = 510, R = 12; // a spot on the forehead
+      pc.fillStyle = '#f00'; pc.beginPath(); pc.arc(cx, cy, R, 0, 7); pc.fill();
+      const out = await ai.removeObjects(big, paint);
+      const a = big.getContext('2d').getImageData(cx - 80, cy - 80, 160, 160).data, b = out.getContext('2d').getImageData(cx - 80, cy - 80, 160, 160).data;
+      let far = 0, maxD = 0;
+      for (let y = 0; y < 160; y++) for (let x = 0; x < 160; x++) {
+        const i = (y * 160 + x) * 4, dd = Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+        const dist = Math.hypot(x - 80, y - 80);
+        if (dd > 6) { maxD = Math.max(maxD, dist); if (dist > R + 5) far++; }
+      }
+      return { far, maxD };
+    });
+    if (res.far > 0) throw new Error(`Removal reached ${res.maxD.toFixed(1)} px from the centre of a 12 px dot (${res.far} pixels too far)`);
+    results.push({ tag, name: `  removal reached ${res.maxD.toFixed(1)} px for a 12 px dot`, ok: true, ms: 0 });
+  });
+
   await step('outline', async () => {
     await page.locator('[data-tool=outline]').click();
     await page.locator('.switch-row input').check();

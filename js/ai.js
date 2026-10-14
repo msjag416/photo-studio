@@ -2,6 +2,7 @@
 // Main engine: WebAssembly on the CPU, single thread (safe on iPad and iPhone).
 // Backup engine: WebGL (graphics chip), only used if the CPU engine fails to start.
 import { makeCanvas, ctx2d, busy } from './util.js';
+import { edt } from './render.js';
 
 const BASE = new URL('../', import.meta.url).href;
 const MODELS = {
@@ -150,7 +151,6 @@ export async function removeObjects(img, paint) {
   // Very large photos are shrunk to save memory on phones and tablets.
   const k = Math.min(1, 2048 / Math.max(W, H));
   const w = Math.round(W * k), h = Math.round(H * k);
-  const r = Math.max(1, Math.max(w, h) / 512); // sizes below are in 512-px terms
 
   const small = makeCanvas(w, h);
   const cc = ctx2d(small);
@@ -163,12 +163,11 @@ export async function removeObjects(img, paint) {
   const mp = mctx.getImageData(0, 0, w, h).data;
   const n = w * h;
 
-  // Hole = painted area. Small gaps between brush strokes are closed (grow, then shrink back),
-  // and the hole grows a few pixels so no edge of the object is left behind. Leftover bits of
-  // the object would otherwise be smeared into the fill.
+  // Hole = exactly what was painted, kept precise: tiny gaps between strokes are closed and
+  // the hole grows by only about 2 pixels (in a round shape), so it follows the brush.
   let hole = new Uint8Array(n);
   for (let p = 0; p < n; p++) hole[p] = mp[p * 4 + 3] > 8 ? 1 : 0;
-  hole = shrink(grow(hole, w, h, Math.round(12 * r)), w, h, Math.round(8 * r));
+  hole = shrink(grow(hole, w, h, 5), w, h, 3);
 
   const imageT = new Uint8Array(3 * n);
   const maskT = new Uint8Array(n);
@@ -185,7 +184,7 @@ export async function removeObjects(img, paint) {
   const res = out[sess.outputNames[0]].data;
 
   // Only the hole (with soft edges) is taken from the model; everything else stays untouched.
-  const soft = softEdge(grow(hole, w, h, Math.round(2 * r)), w, h, Math.round(2 * r));
+  const soft = softEdge(grow(hole, w, h, 1), w, h, 1);
   const patch = cc.createImageData(w, h);
   for (let p = 0; p < n; p++) {
     patch.data[p * 4] = res[p];
@@ -204,20 +203,16 @@ export async function removeObjects(img, paint) {
   return result;
 }
 
-// Grow a 0/1 mask outward by r pixels (square shape). Fast: one pass across, one pass down.
+// Grow a 0/1 mask outward by r pixels, in a round shape (using the exact distance to the mask).
 function grow(m, w, h, r) {
   if (r <= 0) return m;
-  const line = (get, set, len) => {
-    let last = -1e9;
-    const near = new Int32Array(len);
-    for (let i = 0; i < len; i++) { if (get(i)) last = i; near[i] = i - last; }
-    last = 1e9;
-    for (let i = len - 1; i >= 0; i--) { if (get(i)) last = i; set(i, Math.min(near[i], last - i) <= r ? 1 : 0); }
-  };
-  const a = new Uint8Array(w * h), b = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) line(x => m[y * w + x], (x, v) => (a[y * w + x] = v), w);
-  for (let x = 0; x < w; x++) line(y => a[y * w + x], (y, v) => (b[y * w + x] = v), h);
-  return b;
+  const f = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) f[i] = m[i] ? 0 : 1e20;
+  const d = edt(f, w, h);
+  const out = new Uint8Array(w * h);
+  const r2 = r * r;
+  for (let i = 0; i < w * h; i++) out[i] = d[i] <= r2 ? 1 : 0;
+  return out;
 }
 
 // Shrink a 0/1 mask inward by r pixels.
