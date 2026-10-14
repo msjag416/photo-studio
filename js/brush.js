@@ -7,10 +7,12 @@
 import { $, $$, makeCanvas, ctx2d, copyCanvas, showError, busy, nextFrame } from './util.js';
 import { removeObjects } from './ai.js';
 import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, reshapeStep } from './retouch.js';
+import { faceMask } from './faces.js';
 
 let S = null; // state of the open screen
 
-export function openBrush(kind, layer, toolId) {
+// face: for Retouch, the selected face; brushing then only changes that face.
+export function openBrush(kind, layer, toolId, face = null) {
   return new Promise(resolve => {
     const img = layer.img;
     S = {
@@ -30,7 +32,10 @@ export function openBrush(kind, layer, toolId) {
     $('#brushModes').hidden = kind !== 'refine';
     $('#retouchTools').hidden = $('#strengthRow').hidden = kind !== 'retouch';
     setMode('erase');
-    if (kind === 'retouch') { S.orig = img; S.strokeMask = makeCanvas(img.width, img.height); setTool(toolId); }
+    if (kind === 'retouch') {
+      S.orig = img; S.face = face; S.strokeMask = makeCanvas(img.width, img.height); setTool(toolId);
+      if (face && layer.faces && layer.faces.length > 1) $('#brushHint').textContent = `Only Face ${layer.faces.indexOf(face) + 1} will change. Two fingers to zoom.`;
+    }
     else { $('#retouchOpts').hidden = $('#retouchColors').hidden = true; }
     show(true);
     fit();
@@ -71,6 +76,8 @@ function setTool(id) {
   const t = toolById(id);
   S.tool = t;
   S.opt = t.opts ? t.opts[0].id : null;
+  // Where brushing is allowed: the selected face (a bigger area for hair), or everywhere.
+  S.faceMask = S.face ? faceMask(S.face, S.img.width, S.img.height, t.id === 'hair' ? 'head' : 'face') : null;
   $('#brushStrength').value = t.strength;
   $$('#retouchTools .chip-btn').forEach(b => b.classList.toggle('on', b.dataset.tool === t.id));
   const on = $('#retouchTools .chip-btn.on');
@@ -214,6 +221,7 @@ function retouchDab(p, r) {
     soft(tc, x0, y0);
     tc.globalCompositeOperation = 'source-in';
     tc.drawImage(S.orig, x0, y0, w, h, 0, 0, w, h);
+    if (S.faceMask) { tc.globalCompositeOperation = 'destination-in'; tc.drawImage(S.faceMask, x0, y0, w, h, 0, 0, w, h); }
     wc.globalAlpha = strength() * 0.5;
     wc.drawImage(tmp, x0, y0);
     wc.globalAlpha = 1;
@@ -221,6 +229,15 @@ function retouchDab(p, r) {
   }
   // Grow this stroke's mask, then show the effect through it (never stronger than Strength).
   soft(ctx2d(S.strokeMask), 0, 0);
+  if (S.faceMask) {
+    // Nothing outside the selected face can be brushed.
+    const mc = ctx2d(S.strokeMask);
+    mc.save();
+    mc.beginPath(); mc.rect(x0, y0, w, h); mc.clip();
+    mc.globalCompositeOperation = 'destination-in';
+    mc.drawImage(S.faceMask, 0, 0);
+    mc.restore();
+  }
   tc.drawImage(S.effect, x0, y0, w, h, 0, 0, w, h);
   tc.globalCompositeOperation = 'destination-in';
   tc.drawImage(S.strokeMask, x0, y0, w, h, 0, 0, w, h);
@@ -231,6 +248,20 @@ function retouchDab(p, r) {
   wc.globalAlpha = strength();
   wc.drawImage(tmp, x0, y0);
   wc.restore();
+}
+
+// Put back the original pixels outside the selected face (after a Reshape move).
+function keepOutsideFace(x, y, w, h) {
+  if (!S.faceMask) return;
+  const x0 = Math.max(0, Math.floor(x)), y0 = Math.max(0, Math.floor(y));
+  const ww = Math.min(S.img.width, Math.ceil(x + w)) - x0, hh = Math.min(S.img.height, Math.ceil(y + h)) - y0;
+  if (ww <= 0 || hh <= 0) return;
+  const tmp = makeCanvas(ww, hh);
+  const tc = ctx2d(tmp);
+  tc.drawImage(S.img, x0, y0, ww, hh, 0, 0, ww, hh);
+  tc.globalCompositeOperation = 'destination-out';
+  tc.drawImage(S.faceMask, x0, y0, ww, hh, 0, 0, ww, hh);
+  ctx2d(S.work).drawImage(tmp, x0, y0);
 }
 
 function strokeTo(p) {
@@ -246,6 +277,7 @@ function strokeTo(p) {
       const cx = last.x + ((p.x - last.x) * i) / n, cy = last.y + ((p.y - last.y) * i) / n;
       reshapeStep(S.work, cx, cy, (p.x - last.x) / n, (p.y - last.y) / n, r, 0.5 + strength() * 0.5);
     }
+    keepOutsideFace(Math.min(last.x, p.x) - r - 3, Math.min(last.y, p.y) - r - 3, Math.abs(p.x - last.x) + r * 2 + 6, Math.abs(p.y - last.y) + r * 2 + 6);
     return;
   }
   const last = S.stroke.last;

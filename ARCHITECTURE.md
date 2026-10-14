@@ -15,6 +15,8 @@ js/render.js       Draws each layer with its effects (colour, filters, cut-out, 
 js/ai.js           Runs the two AI models (background removal and object removal)
 js/brush.js        Full-screen brush for "Refine edges", "Remove objects" and Retouch
 js/retouch.js      The colour math for the Retouch tools (no AI)
+js/faces.js        Finds faces (MediaPipe Face Landmarker), gives each one an id, face areas
+js/brows.js        Eyebrows: shapes from the face points, styles, drawing, removing the original brows
 js/screens.js      Full-screen text typing and the crop screen
 js/store.js        Saves projects on the device (browser database called IndexedDB)
 js/util.js         Small helpers: picture loading, blur, busy spinner, error box
@@ -56,6 +58,20 @@ To stay smooth, the editor draws layers at up to 1400 pixels and remembers the l
 
 Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
 
+**Faces.** As soon as a photo opens, `faces.js` looks for faces in the background with MediaPipe Face Landmarker (free, Apache licence). It runs in the browser and marks 478 points on each face: eyebrows, eyes, lips and the face outline.
+* **Finding small faces:** the detector shrinks what it looks at to a small square, so faces in a wide or group photo can become too small to see. So it looks at the whole photo, then at overlapping squares at two sizes, and keeps each person once.
+* **Ids and order:** each face gets an id, and faces are numbered left to right.
+* **Choosing a face:** when a photo has more than one face, an oval with a number shows on each face. Tap a face, or use the Face 1 / Face 2 buttons in the panel, to choose who to edit.
+* **Faces kept apart:** every Retouch tool only works inside the selected face (a slightly larger area for hair colour). So brushing across two people changes only the chosen one.
+* **After the photo changes:** if the photo changes (for example after Retouch), the faces are found again and matched to the old ids by position, so each person keeps their settings.
+
+**Eyebrows.** The Eyebrows panel works on the selected face. It has Auto Fix Brows with a Strength slider, a gallery of 11 styles with previews drawn on that person's own face, colours (Match uses the person's own brow colour), sliders (thickness, arch height, length, density, darkness, definition, symmetry, hair texture), Match natural brows, Hold to see before, and Reset brows. How it works (`brows.js`):
+* The brows are never painted into the photo. Each face's brow settings are stored on the layer (`layer.brows`, one entry per face id) and the brows are drawn fresh every time the photo is drawn. That's what makes undo, redo, reset, before/after and per-face settings simple.
+* The shape comes from the face points. Each brow's centre line and thickness are measured along the eye's own direction. The settings then change it: thicker, longer, a higher or flatter arch, or more like the other brow (symmetry). Match natural brows keeps a quarter of the natural difference.
+* A brow is drawn as a soft powder base, multiplied in so the skin's texture still shows, plus hundreds of fine, slightly curved hairs. The hairs point up near the nose and along the brow toward the tail, and they fade in from the inner end. A seeded random number generator places them, so the same face always gets the same hairs, and the preview matches the saved picture.
+* Styles with a different shape first remove the original brows. The brow areas are filled from the skin around them, using only skin-coloured pixels: they're averaged at smaller and smaller sizes, then the holes are filled back in from those averages, with a little skin grain added. This copy of the photo is made once (`layer.noBrows`) and saved with the project.
+* Limit: no free AI can grow truly photo-real new brow hair, so the hairs are drawn. They look natural at normal viewing size, less so when zoomed far in. On very small faces (brows only a few pixels tall) the removed-brow areas can look patchy.
+
 **Text.** Typing happens on a full screen with a row of fonts, colours and alignment. The text becomes a layer that can be moved, resized, rotated, outlined and shadowed like a photo. Tap selected text again to edit it.
 
 **Undo and redo.** After every finished action, such as letting go of a slider, finishing a move or applying a brush, the editor saves a copy of all layer settings, up to 30 steps. Pictures themselves are never edited in place. Every tool makes a new picture, so the steps can share pictures and use little memory.
@@ -70,6 +86,7 @@ ONNX Runtime Web runs the models using WebAssembly on the CPU, single thread. Th
 
 * Background model: `models/u2netp.onnx` (4.5 MB, U2-Net small, Apache 2.0)
 * Object removal model: `models/migan.onnx` (29 MB, MI-GAN by Picsart AI Research, MIT)
+* Face points model: `models/face_landmarker.task` (3.7 MB, MediaPipe by Google, Apache 2.0), run by `vendor/mediapipe/` on the CPU
 
 ## When something goes wrong
 
@@ -77,6 +94,11 @@ Every error shows a box in plain words with a short "Details" line, instead of f
 
 ## Testing
 
-`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, every Retouch tool, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. For each Retouch tool, it brushes the right spot on the face (cheek, teeth, eyes, under the eyes, lips, cheeks, hair, jaw) and checks that the pixels there changed while a patch of plain background did not. It takes a screenshot of every step, plus close-ups of the face. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
+`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, every Retouch tool, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. For each Retouch tool, it brushes the right spot on the face (cheek, teeth, eyes, under the eyes, lips, cheeks, hair, jaw) and checks that the pixels there changed while a patch of plain background did not. It takes a screenshot of every step, plus close-ups of the face. It then opens `tests/two-people.jpg` and does these checks:
+* It finds both faces, and tapping each face selects it.
+* With Face 1 selected, it brushes across both faces, then uses Auto Fix Brows, a style, a slider, a colour, Hold to see before, undo, redo and Reset brows.
+* It saves the picture and checks that Face 1 changed while Face 2 is identical to the original photo.
+
+Last, it opens `tests/three-people.jpg` and checks that all three faces are found. The test photos are made from public domain NASA and scikit-image pictures. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
 
 The test uses `tests/server.mjs`, a small web server that compresses files the same way GitHub Pages does. (An early version broke on GitHub Pages because of that compression, so the test now checks for it.) To run it yourself: start the server with `node tests/server.mjs . 8080`, then run `node tests/e2e.mjs http://localhost:8080/ test-shots chromium,webkit`.

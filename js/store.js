@@ -24,7 +24,7 @@ async function tx(mode, fn) {
   });
 }
 
-const PICS = ['img', 'mask', 'subject'];
+const PICS = ['img', 'mask', 'subject', 'noBrows'];
 
 // Pictures (canvases) are turned into PNG data before saving. They are stored as raw
 // bytes, not Blobs, because Safari can refuse to store Blobs (for example in private browsing).
@@ -34,7 +34,10 @@ export async function saveProject(P, thumb) {
   const layers = [];
   for (const L of P.layers) {
     const copy = { ...L };
-    for (const k of PICS) if (L[k]) copy[k] = await toBytes(L[k]);
+    // Face points and the brow-free picture only count if they belong to the current photo.
+    if (L.noBrowsFor !== L.img?._id) copy.noBrows = null;
+    copy.facesFresh = !!L.img && L.facesFor === L.img._id;
+    for (const k of PICS) if (copy[k]) copy[k] = await toBytes(copy[k]);
     layers.push(copy);
   }
   const rec = { id: P.id, w: P.w, h: P.h, bg: P.bg, layers, updated: Date.now(), thumb: await toBytes(thumb) };
@@ -53,6 +56,11 @@ export async function loadProject(id) {
   for (const L of r.layers) {
     const copy = { ...L };
     for (const k of PICS) if (L[k]) copy[k] = await blobToCanvas(fromBytes(L[k]));
+    // Pictures get new ids when loaded, so link the face data to the loaded photo again.
+    if (copy.img) {
+      copy.noBrowsFor = copy.noBrows ? copy.img._id : null;
+      copy.facesFor = copy.facesFresh ? copy.img._id : null;
+    }
     layers.push(copy);
   }
   return { id: r.id, w: r.w, h: r.h, bg: r.bg, layers };

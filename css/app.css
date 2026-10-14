@@ -95,6 +95,12 @@ i[data-icon] svg { width: 100%; height: 100%; }
 .tool.on { background: var(--accent-soft); }
 .panel-sub { font-weight: 600; font-size: 14px; margin: 16px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .brush-tools > * + * { margin-top: 8px; }
+.big-btn.wide { width: 100%; margin: 4px 0 6px; }
+.brow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.brow-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 10px; font-size: 11px; line-height: 1.2; text-align: center; border: 2px solid transparent; }
+.brow-item canvas { width: 100%; aspect-ratio: 2 / 1; border-radius: 6px; background: #ddd; }
+.brow-item.on { border-color: var(--accent); background: var(--accent-soft); }
+.face-chips { margin-bottom: 2px; }
 .panel-note { color: var(--muted); font-size: 14px; line-height: 1.4; margin: 4px 0 12px; }
 
 .slider-row { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin: 10px 0; color: inherit; }

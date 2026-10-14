@@ -3,6 +3,8 @@ import { $, $$, uid, makeCanvas, ctx2d, busy, nextFrame, showError, toast, canva
 import { icon, fillIcons } from './icons.js';
 import { renderLayer, layerSize, drawLayer, renderProject, defaultEffects, FILTERS } from './render.js';
 import { removeBackground } from './ai.js';
+import { detectFaces, matchFaces, faceAt } from './faces.js';
+import { BROW_STYLES, AUTO_FIX, DEFAULT_BROWS, styleParams, matchColor, removeBrows, drawBrows, naturalShapes } from './brows.js';
 import { openBrush } from './brush.js';
 import { RETOUCH_TOOLS } from './retouch.js';
 import { openText, openCrop, COLORS } from './screens.js';
@@ -35,7 +37,8 @@ export function photoLayer(img, P0, fill = false) {
 // Each step keeps a copy of the settings. Pictures are never changed in place
 // (tools always make a new canvas), so steps can share them safely.
 function cloneLayer(L) {
-  return { ...L, adj: { ...L.adj }, outline: { ...L.outline }, shadow: { ...L.shadow }, crop: L.crop ? { ...L.crop } : null };
+  const brows = L.brows ? Object.fromEntries(Object.entries(L.brows).map(([k, v]) => [k, { ...v }])) : null;
+  return { ...L, adj: { ...L.adj }, outline: { ...L.outline }, shadow: { ...L.shadow }, crop: L.crop ? { ...L.crop } : null, brows, browColor: L.browColor ? { ...L.browColor } : null };
 }
 function snapshot() {
   return { w: P.w, h: P.h, bg: P.bg, layers: P.layers.map(cloneLayer), selId };
@@ -72,6 +75,7 @@ export async function openEditor(project, opts = {}, exit) {
   $('#editor').classList.add('active');
   await nextFrame();
   fit(); commit(); draw(); buildPanel();
+  for (const L of P.layers) if (L.type === 'photo') ensureFaces(L, true); // find faces in the background
   if (opts.then === 'bg' && sel()) await doRemoveBg();
   if (opts.then === 'erase' && sel()) await doEraseObjects();
 }
@@ -105,6 +109,7 @@ function fit() {
   const m = 24;
   const s = Math.min((r.width - m * 2) / P.w, (r.height - m * 2) / P.h);
   view = { scale: s, ox: (r.width - P.w * s) / 2, oy: (r.height - P.h * s) / 2 };
+  view.fitFor = r.width + 'x' + r.height;
 }
 
 let checker;
@@ -127,6 +132,8 @@ function drawNow() {
   if (!P) return;
   const cv = $('#view');
   const r = stageRect();
+  // The photo area changed size (for example the panel below grew), so fit the photo again.
+  if (view.fitFor !== r.width + 'x' + r.height) fit();
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(r.width * dpr) || cv.height !== Math.round(r.height * dpr)) {
     cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
@@ -148,6 +155,7 @@ function drawNow() {
   cx.restore();
   const L = sel();
   if (L && !L.hidden) drawSelection(cx, L);
+  if (L && !L.hidden && L.type === 'photo' && L.faces && (L.faces.length > 1 || tool === 'brows')) drawFaceOutlines(cx, L);
   $('#refineBtn').hidden = !(L && L.type === 'photo' && L.mask && !tool);
 }
 
@@ -180,6 +188,88 @@ function drawSelection(cx, L) {
   cx.restore();
 }
 
+// Picture pixels of a photo layer <-> screen points.
+function imgToScreen(L, ix, iy) {
+  const c = L.crop || { x: 0, y: 0 };
+  const { w, h } = layerSize(L);
+  const lx = (ix - c.x - w / 2) * (L.flipX ? -1 : 1), ly = (iy - c.y - h / 2) * (L.flipY ? -1 : 1);
+  const sc = L.scale * view.scale, cos = Math.cos(L.rot), sin = Math.sin(L.rot);
+  return { x: view.ox + L.x * view.scale + (lx * cos - ly * sin) * sc, y: view.oy + L.y * view.scale + (lx * sin + ly * cos) * sc };
+}
+function screenToImg(L, x, y) {
+  const c = L.crop || { x: 0, y: 0 };
+  const { w, h } = layerSize(L);
+  const sc = L.scale * view.scale, cos = Math.cos(-L.rot), sin = Math.sin(-L.rot);
+  const dx = x - (view.ox + L.x * view.scale), dy = y - (view.oy + L.y * view.scale);
+  const lx = (dx * cos - dy * sin) / sc, ly = (dx * sin + dy * cos) / sc;
+  return { x: lx * (L.flipX ? -1 : 1) + c.x + w / 2, y: ly * (L.flipY ? -1 : 1) + c.y + h / 2 };
+}
+
+// An oval around each face; the selected one is solid and coloured, the others dashed.
+function drawFaceOutlines(cx, L) {
+  cx.save();
+  L.faces.forEach((f, n) => {
+    const b = f.box, mx = b.x + b.w / 2, my = b.y + b.h / 2;
+    const on = f.id === L.selFace;
+    cx.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const q = imgToScreen(L, mx + Math.cos(a) * b.w * 0.68, my + Math.sin(a) * b.h * 0.66);
+      i ? cx.lineTo(q.x, q.y) : cx.moveTo(q.x, q.y);
+    }
+    cx.closePath();
+    cx.setLineDash(on ? [] : [6, 5]);
+    cx.lineWidth = on ? 4 : 2.5; cx.strokeStyle = 'rgba(0,0,0,.35)'; cx.stroke();
+    cx.lineWidth = on ? 2.5 : 1.5; cx.strokeStyle = on ? '#2DD4BF' : '#fff'; cx.stroke();
+    const top = imgToScreen(L, mx, my - b.h * 0.66);
+    cx.setLineDash([]);
+    cx.beginPath(); cx.arc(top.x, top.y, 11, 0, Math.PI * 2);
+    cx.fillStyle = on ? '#0F766E' : 'rgba(0,0,0,.55)'; cx.fill();
+    cx.fillStyle = '#fff'; cx.font = '600 12px -apple-system, Helvetica, Arial, sans-serif';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText(String(n + 1), top.x, top.y + 0.5);
+  });
+  cx.restore();
+}
+
+// ---------------- Faces ----------------
+// Find the faces in a photo layer (once per picture). Each face keeps its id when the photo
+// changes, matched by position, so its settings stay with the same person.
+const pendingFaces = new Map();
+async function ensureFaces(L, quiet = false) {
+  if (!L || L.type !== 'photo') return [];
+  if (L.faces && L.facesFor === L.img._id) return L.faces;
+  const img = L.img;
+  if (!quiet) busy('Finding faces…');
+  try {
+    if (!pendingFaces.has(img)) pendingFaces.set(img, detectFaces(img));
+    const found = await pendingFaces.get(img);
+    // Update this layer and its copies in the undo history that show the same picture.
+    for (const l of [L, ...hist.stack.flatMap(st => st.layers)]) {
+      if (l.id !== L.id || l.img !== img) continue;
+      l.faces = matchFaces(l.faces, found.map(f => ({ ...f })));
+      l.facesFor = img._id;
+      if (!l.faces.some(f => f.id === l.selFace)) l.selFace = l.faces[0] ? l.faces[0].id : null;
+    }
+    if (quiet && L.faces.length > 1 && P && sel() === L) toast(`Found ${L.faces.length} faces. Tap one to choose who to edit.`);
+  } catch (err) {
+    pendingFaces.delete(img);
+    if (!quiet) showError('Faces could not be found in this photo. Please try again.', err);
+    else console.warn('Face finding failed', err);
+    return [];
+  } finally {
+    if (!quiet) busy(false);
+  }
+  if (P) { draw(); if (sel() === L && !tool) buildPanel(); }
+  return L.faces || [];
+}
+const selFace = L => (L.faces || []).find(f => f.id === L.selFace) || null;
+function chooseFace(L, id) {
+  L.selFace = id;
+  draw(); buildPanel();
+  toast(`Face ${L.faces.findIndex(f => f.id === id) + 1} selected`);
+}
+
 // Is the screen point inside layer L?
 function hitLayer(L, x, y) {
   const { w, h } = layerSize(L);
@@ -201,6 +291,8 @@ function local(e) {
 
 function onDown(e) {
   if (!P || e.target !== $('#view')) return; // taps on floating buttons are not canvas taps
+  const r0 = stageRect();
+  if (view.fitFor !== r0.width + 'x' + r0.height) { fit(); draw(); }
   e.preventDefault();
   const p = local(e);
   if (picking) { pickColour(p); return; }
@@ -274,9 +366,15 @@ async function onUp(e) {
   gesture = null;
   if (!g) return;
   if (g.moved) commit();
-  else if (g.kind === 'move' && g.wasSelected) {
+  else if (g.kind === 'move') {
     const L = sel();
-    if (L && L.type === 'text') editText(L);
+    if (L && L.type === 'text' && g.wasSelected) editText(L);
+    if (L && L.type === 'photo' && L.faces && L.faces.length > 1) {
+      // Tapping a face picks who to edit.
+      const q = screenToImg(L, g.start.x, g.start.y);
+      const f = faceAt(L.faces, q.x, q.y);
+      if (f && f.id !== L.selFace) chooseFace(L, f.id);
+    }
   }
 }
 
@@ -324,7 +422,8 @@ async function doEraseObjects() {
 async function doRetouch(toolId) {
   const L = sel();
   if (!L || L.type !== 'photo') return;
-  const res = await openBrush('retouch', L, toolId);
+  const faces = await ensureFaces(L);
+  const res = await openBrush('retouch', L, toolId, faces.length ? selFace(L) : null);
   fit(); draw();
   if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
 }
@@ -408,7 +507,9 @@ function buildPanel() {
         ${PHOTO_TOOLS.map(([id, name, ic]) => `<button class="tool${toolActive(L, id) ? ' on' : ''}" data-tool="${id}">${icon(ic)}${name}</button>`).join('')}
       </div>
       <div class="panel-sub">Retouch</div>
+      ${faceChooser(L)}
       <div class="tools">
+        <button class="tool" data-tool="brows">${icon('brow')}Eyebrows</button>
         ${RETOUCH_TOOLS.map(t => `<button class="tool" data-retouch="${t.id}">${icon(t.icon)}${t.name}</button>`).join('')}
       </div>`;
   } else {
@@ -422,6 +523,17 @@ function buildPanel() {
   panel.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => panelAction(b.dataset.act)));
   panel.querySelectorAll('[data-tool]').forEach(b => (b.onclick = () => openTool(b.dataset.tool)));
   panel.querySelectorAll('[data-retouch]').forEach(b => (b.onclick = () => doRetouch(b.dataset.retouch)));
+  wireFaceChooser(panel, L);
+}
+
+// "Face 1 / Face 2 …" row, shown when a photo has more than one face.
+function faceChooser(L) {
+  if (!L.faces || L.faces.length < 2) return '';
+  return `<div class="chips face-chips">${L.faces.map((f, n) => `<button class="chip-btn${f.id === L.selFace ? ' on' : ''}" data-face="${f.id}">Face ${n + 1}</button>`).join('')}</div>
+    <p class="panel-note">Edits only change the selected face. Tap a face on the photo to switch.</p>`;
+}
+function wireFaceChooser(panel, L) {
+  panel.querySelectorAll('[data-face]').forEach(b => (b.onclick = () => chooseFace(L, b.dataset.face)));
 }
 
 function toolActive(L, id) {
@@ -461,6 +573,13 @@ async function openTool(id) {
   }
   if (id === 'enhance') { L.enhance = !L.enhance; commit(); draw(); buildPanel(); toast(L.enhance ? 'Enhanced' : 'Enhance off'); return; }
   if (id === 'blur' && !(await ensureSubject(L))) return;
+  if (id === 'brows') {
+    const faces = await ensureFaces(L);
+    if (!faces.length) { toast('No face was found in this photo.'); return; }
+    // The person's own brow colour, worked out once per face.
+    L.browColor = { ...(L.browColor || {}) };
+    for (const f of faces) if (!L.browColor[f.id]) L.browColor[f.id] = matchColor(L.img, f);
+  }
   tool = id;
   buildPanel();
   draw();
@@ -504,12 +623,13 @@ function colourRow(get, set, withNone = false) {
 }
 
 function toolPanel(panel, L) {
-  const titles = Object.fromEntries([...PHOTO_TOOLS, ...TEXT_TOOLS].map(([id, n]) => [id, n]));
+  const titles = Object.fromEntries([...PHOTO_TOOLS, ...TEXT_TOOLS, ['brows', 'Eyebrows']].map(([id, n]) => [id, n]));
   panel.innerHTML = header(titles[tool] || '');
   panel.querySelector('[data-back]').onclick = () => { tool = null; picking = null; $('#pickHint').hidden = true; buildPanel(); draw(); };
   const add = el => panel.appendChild(el);
   const note = t => { const p = document.createElement('p'); p.className = 'panel-note'; p.textContent = t; add(p); };
 
+  if (tool === 'brows') return browsPanel(panel, L, add, note);
   if (tool === 'adjust') {
     add(slider('Brightness', -100, 100, () => L.adj.bright, v => (L.adj.bright = v)));
     add(slider('Contrast', -100, 100, () => L.adj.contrast, v => (L.adj.contrast = v)));
@@ -580,6 +700,136 @@ function toolPanel(panel, L) {
     row.querySelectorAll('[data-e]').forEach(b => (b.onclick = () => expandCanvas(b.dataset.e)));
     add(row);
   }
+}
+
+// ---------------- Eyebrows panel ----------------
+const BROW_COLORS = ['#1F1A17', '#3A2A21', '#5A4031', '#7B5B42', '#A8875F', '#6F3A28', '#6A6560', '#7C6B62'];
+
+// The photo with the original brows filled in with skin, made once per photo (for reshaping styles).
+async function ensureNoBrows(L) {
+  if (L.noBrows && L.noBrowsFor === L.img._id) return true;
+  try {
+    busy('Preparing eyebrow styles…');
+    await nextFrame();
+    const img = L.img;
+    const out = removeBrows(img, L.faces);
+    for (const l of [L, ...hist.stack.flatMap(st => st.layers)]) {
+      if (l.id === L.id && l.img === img) { l.noBrows = out; l.noBrowsFor = img._id; }
+    }
+    busy(false);
+    return true;
+  } catch (err) {
+    showError('The eyebrow styles could not be prepared. Please try again.', err);
+    return false;
+  }
+}
+
+// A small picture of the selected person's brows with a style applied.
+function browThumb(L, face, params, W = 132, H = 66) {
+  const sh = naturalShapes(face);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s2 of sh) for (const q of s2.outline) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+  let w = (x1 - x0) * 1.25, h = Math.max((y1 - y0) * 3, w * H / W);
+  w = h * W / H;
+  const crop = { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h * 0.45 };
+  const s = W / w;
+  const c = makeCanvas(W, H);
+  const cx = ctx2d(c);
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(L.img, crop.x, crop.y, w, h, 0, 0, W, H);
+  if (params) drawBrows(c, L, face, { ...params, intensity: 1 }, crop, s);
+  return c;
+}
+
+function browsPanel(panel, L, add, note) {
+  const face = selFace(L);
+  if (!face) { note('No face found.'); return; }
+  const cur = () => (L.brows && L.brows[face.id]) || null;
+  const setP = patch => {
+    L.brows = { ...(L.brows || {}) };
+    L.brows[face.id] = { ...(cur() || { ...DEFAULT_BROWS, style: 'custom', intensity: 0.8 }), ...patch };
+  };
+  const wrap = document.createElement('div');
+  wrap.innerHTML = faceChooser(L);
+  add(wrap);
+  wireFaceChooser(wrap, L);
+
+  // One-tap fix.
+  const fix = document.createElement('button');
+  fix.className = 'big-btn wide';
+  fix.innerHTML = icon('sparkle') + 'Auto Fix Brows';
+  fix.onclick = () => { setP({ ...DEFAULT_BROWS, ...AUTO_FIX, intensity: cur() ? cur().intensity : 0.8, color: cur() ? cur().color : null }); commit(); draw(); buildPanel(); };
+  add(fix);
+
+  if (cur()) add(slider('Strength', 0, 100, () => Math.round(cur().intensity * 100), v => setP({ intensity: v / 100 }), '%'));
+
+  // Style gallery: previews on this person's own face.
+  const head = document.createElement('div');
+  head.className = 'panel-note';
+  head.style.margin = '12px 0 6px';
+  head.textContent = 'Styles';
+  add(head);
+  const grid = document.createElement('div');
+  grid.className = 'brow-grid';
+  const curStyle = cur() ? cur().style : 'none';
+  const items = [{ id: 'none', name: 'None' }, ...BROW_STYLES];
+  for (const st of items) {
+    const b = document.createElement('button');
+    b.className = 'brow-item' + (curStyle === st.id ? ' on' : '');
+    b.dataset.style = st.id;
+    const params = st.id === 'none' ? null : styleParams(st.id, cur() || {});
+    try { b.appendChild(browThumb(L, face, params)); } catch (e) { console.warn(e); }
+    b.appendChild(document.createTextNode(st.name));
+    b.onclick = async () => {
+      if (st.id === 'none') { delete L.brows[face.id]; commit(); draw(); buildPanel(); return; }
+      if (params.clear > 0 && !(await ensureNoBrows(L))) return;
+      setP(styleParams(st.id, cur() || {}));
+      commit(); draw(); buildPanel();
+    };
+    grid.appendChild(b);
+  }
+  add(grid);
+
+  // Colour: matched to the person's own brows, or a swatch.
+  const colHead = document.createElement('div');
+  colHead.className = 'panel-note';
+  colHead.style.margin = '12px 0 4px';
+  colHead.textContent = 'Colour';
+  add(colHead);
+  const sw = document.createElement('div');
+  sw.className = 'swatches';
+  const curCol = cur() ? cur().color : null;
+  sw.innerHTML = `<button class="chip-btn${!curCol ? ' on' : ''}" data-col="">Match</button>` +
+    BROW_COLORS.map(c => `<button class="swatch${curCol === c ? ' on' : ''}" data-col="${c}" style="background:${c}" aria-label="Brow colour"></button>`).join('');
+  sw.querySelectorAll('[data-col]').forEach(b => (b.onclick = () => { setP({ color: b.dataset.col || null }); commit(); draw(); buildPanel(); }));
+  add(sw);
+
+  // Fine-tuning. Each slider changes the brows live; letting go saves an undo step.
+  const num = (k, mul = 100) => () => Math.round(((cur() || DEFAULT_BROWS)[k]) * mul);
+  const put = (k, mul = 100) => v => setP({ [k]: v / mul });
+  add(slider('Thickness', 50, 160, num('thick'), put('thick'), '%'));
+  add(slider('Arch height', -100, 100, num('arch'), put('arch')));
+  add(slider('Length', 80, 125, num('length'), put('length'), '%'));
+  add(slider('Density', 0, 100, num('density'), put('density')));
+  add(slider('Darkness', 0, 100, num('darkness'), put('darkness')));
+  add(slider('Definition', 0, 100, num('definition'), put('definition')));
+  add(slider('Symmetry', 0, 100, num('symmetry'), put('symmetry')));
+  add(slider('Hair texture', 0, 100, num('texture'), put('texture')));
+  add(switchRow('Match natural brows', () => (cur() || DEFAULT_BROWS).match, v => setP({ match: v })));
+
+  // Before/after (hold) and reset.
+  const row = document.createElement('div');
+  row.className = 'row-btns';
+  row.innerHTML = `<button class="chip-btn" data-before>Hold to see before</button><button class="chip-btn" data-reset>Reset brows</button>`;
+  const before = row.querySelector('[data-before]');
+  const on = e => { e.preventDefault(); L.browsOff = true; draw(); };
+  const off = () => { if (L.browsOff) { delete L.browsOff; draw(); } };
+  before.addEventListener('pointerdown', on);
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => before.addEventListener(ev, off));
+  row.querySelector('[data-reset]').onclick = () => {
+    if (L.brows && L.brows[face.id]) { L.brows = { ...L.brows }; delete L.brows[face.id]; commit(); draw(); buildPanel(); }
+  };
+  add(row);
 }
 
 function expandCanvas(how) {

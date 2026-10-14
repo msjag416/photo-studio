@@ -2,6 +2,7 @@
 // A layer is first drawn on its own canvas with all its effects (colour, filter, cut-out,
 // corners, outline). Then it is placed on the main canvas (position, size, turn, shadow).
 import { makeCanvas, ctx2d, blurCanvas } from './util.js';
+import { drawBrows } from './brows.js';
 
 export const FILTERS = [
   { id: 'none', name: 'Original' },
@@ -43,8 +44,9 @@ export function defaultEffects() {
 // ---------- Cache so sliders stay smooth ----------
 const cache = new Map();
 function cacheKey(L, cap) {
-  const ids = [L.img && L.img._id, L.mask && L.mask._id, L.subject && L.subject._id].join(',');
-  const { x, y, scale, rot, hidden, opacity, shadow, name, ...rest } = L;
+  const ids = [L.img && L.img._id, L.mask && L.mask._id, L.subject && L.subject._id, L.noBrows && L.noBrows._id].join(',');
+  // Face points are long lists; facesFor says which picture they belong to, which is enough here.
+  const { x, y, scale, rot, hidden, opacity, shadow, name, faces, selFace, ...rest } = L;
   return cap + '|' + ids + '|' + JSON.stringify(rest, (k, v) => (v instanceof HTMLCanvasElement ? undefined : v));
 }
 
@@ -86,6 +88,11 @@ function renderPhoto(L, cap) {
     cx.clearRect(0, 0, w, h);
     cx.drawImage(blurred, 0, 0);
     cx.drawImage(person, 0, 0);
+  }
+
+  // Eyebrows, drawn fresh from each face's settings (the photo itself is never changed).
+  if (L.brows && L.faces && !L.browsOff) {
+    for (const f of L.faces) if (L.brows[f.id]) drawBrows(c, L, f, L.brows[f.id], crop, s);
   }
 
   colourPass(c, L);

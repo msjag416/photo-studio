@@ -27,7 +27,7 @@ async function run(engine, devName) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', m => { if (m.type() === 'error' && !/^INFO:|XNNPACK/.test(m.text())) errors.push(m.text()); });
   const tag = `${engine}-${devName}`;
   let n = 0;
   const shot = async name => page.screenshot({ path: `${OUT}/${tag}-${String(++n).padStart(2, '0')}-${name}.png` });
@@ -253,6 +253,135 @@ async function run(engine, devName) {
     const c = await page.evaluate(() => document.querySelectorAll('#layerList .layer-row').length);
     await page.locator('#layersSheet [data-close]').click();
     if (c !== 2) throw new Error('Expected 2 layers in the reopened project, found ' + c);
+  });
+
+  // ---------- Faces: pick a face, edits stay on that face only ----------
+  const TWO = path.resolve(path.dirname(PHOTO), 'two-people.jpg');
+  const THREE = path.resolve(path.dirname(PHOTO), 'three-people.jpg');
+  // Screen point of a picture pixel in the editor (the photo fills the canvas).
+  const editorPt = async (x, y, W, H) => {
+    const r = await page.locator('#stage').boundingBox();
+    const s = Math.min((r.width - 48) / W, (r.height - 48) / H);
+    return [r.x + (r.width - W * s) / 2 + x * s, r.y + (r.height - H * s) / 2 + y * s];
+  };
+  // Paint on the brush screen using picture pixels.
+  const paintImg = async (pts, size, W, H) => {
+    const r = await page.locator('#brushStage').boundingBox();
+    const s = Math.min((r.width - 24) / W, (r.height - 24) / H);
+    const P = ([x, y]) => [r.x + (r.width - W * s) / 2 + x * s, r.y + (r.height - H * s) / 2 + y * s];
+    await page.locator('#brushSize').fill(String(Math.round(size * s)));
+    await page.mouse.move(...P(pts[0]));
+    await page.mouse.down();
+    for (const q of pts.slice(1)) await page.mouse.move(...P(q), { steps: 12 });
+    await page.mouse.up();
+  };
+  // Compare the saved picture with the original photo inside a box (in the browser, same decoder).
+  const boxDiff = (savedB64, original, box) => page.evaluate(async ({ savedB64, original, box }) => {
+    const load = async src => { const b = await (await fetch(src)).blob(); const bm = await createImageBitmap(b); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); return c.getContext('2d').getImageData(box.x, box.y, box.w, box.h).data; };
+    const a = await load('data:image/png;base64,' + savedB64), b = await load(original);
+    let t = 0;
+    for (let i = 0; i < a.length; i += 4) t += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+    return t / (a.length / 4 * 3);
+  }, { savedB64, original, box });
+  const FACE_A = { x: 175, y: 70, w: 100, h: 115 }, FACE_B = { x: 748, y: 70, w: 100, h: 115 };
+
+  await step('faces-two-found', async () => {
+    await page.locator('#backBtn').click();
+    await page.locator('#home.active').waitFor();
+    await page.locator('#fileEdit').setInputFiles(TWO);
+    await page.locator('#editor.active').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('[data-face]').length === 2, null, { timeout: 90000 });
+  });
+
+  await step('faces-tap-to-select', async () => {
+    await page.mouse.click(...(await editorPt(797, 125, 1024, 512)));
+    await page.waitForTimeout(300);
+    const on2 = await page.locator('[data-face].on').textContent();
+    await page.mouse.click(...(await editorPt(225, 125, 1024, 512)));
+    await page.waitForTimeout(300);
+    const on1 = await page.locator('[data-face].on').textContent();
+    if (on2.trim() !== 'Face 2' || on1.trim() !== 'Face 1') throw new Error(`Tapping faces selected "${on2}" then "${on1}"`);
+  });
+
+  await step('faces-retouch-only-selected', async () => {
+    // Face 1 is selected; brush across BOTH faces. Face 2 must not change.
+    await page.locator('[data-retouch=brighten]').click();
+    await page.locator('#brush.active').waitFor();
+    await page.locator('#brushStrength').fill('100');
+    await paintImg([[190, 135], [500, 135], [820, 135]], 30, 1024, 512);
+    await page.waitForTimeout(200);
+    await shot('faces-brush-across-both');
+    await page.locator('#brushDone').click();
+    await page.locator('#editor.active').waitFor();
+  });
+
+  await step('brows-auto-fix', async () => {
+    await page.locator('[data-tool=brows]').click();
+    await page.locator('.brow-grid').waitFor();
+    await page.locator('.big-btn.wide').click();
+    await page.waitForTimeout(400);
+    if (!(await page.locator('#panel .slider-row', { hasText: 'Strength' }).count())) throw new Error('Strength slider missing after Auto Fix');
+  });
+
+  await step('brows-style-and-sliders', async () => {
+    await page.locator('[data-style=higharch]').click();
+    await idle();
+    await page.waitForTimeout(400);
+    const on = await page.locator('.brow-item.on').textContent();
+    if (!on.includes('High Arch')) throw new Error('High Arch not selected: ' + on);
+    const th = page.locator('#panel .slider-row', { hasText: 'Thickness' }).locator('input');
+    await th.fill('130');
+    await th.dispatchEvent('change');
+    await page.waitForTimeout(300);
+    await page.locator('[data-col="#3A2A21"]').click();
+    await page.waitForTimeout(300);
+  });
+
+  await step('brows-before-after', async () => {
+    const btn = page.locator('[data-before]');
+    const b = await btn.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(300);
+    await shot('brows-holding-before');
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+  });
+
+  await step('brows-undo-redo-reset', async () => {
+    await page.locator('#undoBtn').click();   // undo the colour
+    await page.waitForTimeout(200);
+    await page.locator('#redoBtn').click();
+    await page.waitForTimeout(200);
+    await page.locator('[data-tool=brows]').click();
+    await page.locator('[data-reset]').click();
+    await page.waitForTimeout(200);
+    if (await page.locator('#panel .slider-row', { hasText: 'Strength' }).count()) throw new Error('Brows still set after Reset');
+    await page.locator('[data-style=bold]').click();
+    await idle();
+    await page.waitForTimeout(300);
+  });
+
+  await step('faces-save-other-face-untouched', async () => {
+    await page.locator('#saveBtn').click();
+    await page.locator('#formatBtns [data-format=png]').click();
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.locator('#downloadBtn').click()]);
+    const file = `${OUT}/${tag}-two-faces.png`;
+    await dl.saveAs(file);
+    const b64 = fs.readFileSync(file).toString('base64');
+    const orig = '/tests/two-people.jpg';
+    const dB = await boxDiff(b64, orig, FACE_B), dA = await boxDiff(b64, orig, FACE_A);
+    if (dA < 1) throw new Error(`Face 1 did not change (${dA.toFixed(2)})`);
+    if (dB > 0.5) throw new Error(`Face 2 changed (${dB.toFixed(2)}) but only Face 1 was edited`);
+    results.push({ tag, name: `  face1 changed ${dA.toFixed(1)}, face2 ${dB.toFixed(2)}`, ok: true, ms: 0 });
+  });
+
+  await step('faces-three-found', async () => {
+    await page.locator('#backBtn').click();
+    await page.locator('#home.active').waitFor();
+    await page.locator('#fileEdit').setInputFiles(THREE);
+    await page.locator('#editor.active').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('[data-face]').length >= 3, null, { timeout: 90000 });
   });
 
   if (errors.length) results.push({ tag, name: 'console', ok: false, err: errors.slice(0, 3).join(' | ') });
