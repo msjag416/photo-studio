@@ -146,7 +146,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 
 /* ---------- Brush / crop / text screens ---------- */
 .brush-stage { position: relative; flex: 1; min-height: 0; touch-action: none; }
-.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 20px; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; pointer-events: none; white-space: nowrap; }
+.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 20px; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; pointer-events: none; width: max-content; max-width: calc(100% - 24px); text-align: center; }
 .brush-tools, .text-tools { padding: 10px 16px calc(env(safe-area-inset-bottom) + 12px); background: var(--dark-2); }
 .brush-tools .seg button.on, .text-tools .seg button.on { background: #48463F; color: #fff; }
 .dark .seg button { color: #ddd; }
