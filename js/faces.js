@@ -8,6 +8,9 @@ let landmarkerPromise = null;
 function getLandmarker() {
   if (!landmarkerPromise) {
     landmarkerPromise = (async () => {
+      if (!document.createElement('canvas').getContext('webgl2')) {
+        throw new Error('This browser has no WebGL 2, which the face finder needs. Try an up-to-date Safari or Chrome.');
+      }
       const { FaceLandmarker, FilesetResolver } = await import(BASE + 'vendor/mediapipe/vision_bundle.mjs');
       const files = await FilesetResolver.forVisionTasks(BASE + 'vendor/mediapipe/wasm');
       return FaceLandmarker.createFromOptions(files, {

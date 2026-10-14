@@ -287,6 +287,14 @@ async function run(engine, devName) {
   }, { savedB64, original, box });
   const FACE_A = { x: 175, y: 70, w: 100, h: 115 }, FACE_B = { x: 748, y: 70, w: 100, h: 115 };
 
+  // The face finder needs WebGL 2 (every recent iPhone, iPad and computer browser has it).
+  // Some test computers don't, so record it and skip the face steps there instead of failing.
+  const gl2 = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+  if (!gl2) {
+    results.push({ tag, name: 'faces SKIPPED: this test computer has no WebGL 2', ok: true, skip: true, ms: 0 });
+    await browser.close();
+    return;
+  }
   await step('faces-two-found', async () => {
     await page.locator('#backBtn').click();
     await page.locator('#home.active').waitFor();
@@ -395,7 +403,7 @@ for (const engine of ENGINES) {
     try { await run(engine, dev); } catch (e) { results.push({ tag: `${engine}-${dev}`, name: 'launch', ok: false, err: e.message.split('\n')[0] }); }
   }
 }
-const lines = results.map(r => `${r.ok ? 'PASS' : 'FAIL'}  ${r.tag.padEnd(18)} ${r.name.padEnd(20)} ${r.ok ? r.ms + ' ms' : r.err}`);
+const lines = results.map(r => `${r.skip ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'}  ${r.tag.padEnd(18)} ${r.name.padEnd(20)} ${r.ok ? r.ms + ' ms' : r.err}`);
 fs.writeFileSync(`${OUT}/results.txt`, lines.join('\n') + '\n');
-for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.tag.padEnd(18)} ${r.name.padEnd(20)} ${r.ok ? r.ms + ' ms' : r.err}`);
+for (const r of results) console.log(`${r.skip ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'}  ${r.tag.padEnd(18)} ${r.name.padEnd(20)} ${r.ok ? r.ms + ' ms' : r.err}`);
 process.exit(results.every(r => r.ok) ? 0 : 1);
