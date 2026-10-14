@@ -12,7 +12,7 @@ export function openBrush(kind, layer) {
     const img = layer.img;
     S = {
       kind, resolve, mode: 'erase',
-      img: kind === 'erase' ? img : img,
+      img,
       mask: kind === 'refine' ? (layer.mask ? copyCanvas(layer.mask) : solidMask(img)) : null,
       paint: kind === 'erase' ? makeCanvas(img.width, img.height) : null,
       undo: [],
