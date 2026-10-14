@@ -89,11 +89,15 @@
     <div class="hint" id="brushHint"></div>
   </div>
   <footer class="brush-tools">
+    <div class="chips" id="retouchTools" hidden></div>
+    <div class="seg" id="retouchOpts" hidden></div>
+    <div class="swatches" id="retouchColors" hidden></div>
     <div class="seg" id="brushModes">
       <button data-mode="erase" class="on">Erase</button>
       <button data-mode="restore">Restore</button>
     </div>
     <label class="slider-row">Brush size<input type="range" id="brushSize" min="4" max="120" value="30"></label>
+    <label class="slider-row" id="strengthRow" hidden>Strength<input type="range" id="brushStrength" min="5" max="100" value="40"></label>
   </footer>
 </section>
 

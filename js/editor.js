@@ -4,6 +4,7 @@ import { icon, fillIcons } from './icons.js';
 import { renderLayer, layerSize, drawLayer, renderProject, defaultEffects, FILTERS } from './render.js';
 import { removeBackground } from './ai.js';
 import { openBrush } from './brush.js';
+import { RETOUCH_TOOLS } from './retouch.js';
 import { openText, openCrop, COLORS } from './screens.js';
 import { saveProject } from './store.js';
 
@@ -319,6 +320,14 @@ async function doEraseObjects() {
   fit(); draw();
   if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
 }
+// Retouch: the brush screen returns a new picture; it replaces the photo as one undo step.
+async function doRetouch(toolId) {
+  const L = sel();
+  if (!L || L.type !== 'photo') return;
+  const res = await openBrush('retouch', L, toolId);
+  fit(); draw();
+  if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
+}
 async function doRefine() {
   const L = sel();
   if (!L || L.type !== 'photo') return;
@@ -397,6 +406,10 @@ function buildPanel() {
       <div class="tools">
         ${L.mask ? `<button class="tool" data-tool="refine">${icon('brush')}Refine edges</button>` : ''}
         ${PHOTO_TOOLS.map(([id, name, ic]) => `<button class="tool${toolActive(L, id) ? ' on' : ''}" data-tool="${id}">${icon(ic)}${name}</button>`).join('')}
+      </div>
+      <div class="panel-sub">Retouch</div>
+      <div class="tools">
+        ${RETOUCH_TOOLS.map(t => `<button class="tool" data-retouch="${t.id}">${icon(t.icon)}${t.name}</button>`).join('')}
       </div>`;
   } else {
     panel.innerHTML = `
@@ -408,6 +421,7 @@ function buildPanel() {
   }
   panel.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => panelAction(b.dataset.act)));
   panel.querySelectorAll('[data-tool]').forEach(b => (b.onclick = () => openTool(b.dataset.tool)));
+  panel.querySelectorAll('[data-retouch]').forEach(b => (b.onclick = () => doRetouch(b.dataset.retouch)));
 }
 
 function toolActive(L, id) {

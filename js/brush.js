@@ -1,13 +1,16 @@
 // Full-screen brush tools:
 //  - "refine": paint on the cut-out mask (Erase hides, Restore brings back the original).
 //  - "erase":  paint over an object; when the finger lifts, the AI removes it and fills the gap.
+//  - "retouch": smooth skin, whiten teeth, eye colour, brighten, makeup, hair colour, reshape.
+//    Each stroke is worked on a copy of the photo ("work"); lifting the finger keeps it.
 // One finger paints. Two fingers zoom and move the picture.
 import { $, $$, makeCanvas, ctx2d, copyCanvas, showError, busy, nextFrame } from './util.js';
 import { removeObjects } from './ai.js';
+import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, reshapeStep } from './retouch.js';
 
 let S = null; // state of the open screen
 
-export function openBrush(kind, layer) {
+export function openBrush(kind, layer, toolId) {
   return new Promise(resolve => {
     const img = layer.img;
     S = {
@@ -19,14 +22,22 @@ export function openBrush(kind, layer) {
       view: null, pointers: new Map(), stroke: null, cursor: null, busy: false,
     };
     if (kind === 'refine') { S.cut = makeCanvas(img.width, img.height); rebuildCut(0, 0, img.width, img.height); }
-    $('#brushTitle').textContent = kind === 'refine' ? 'Refine edges' : 'Remove objects';
-    $('#brushHint').textContent = kind === 'refine' ? 'Paint to erase or restore. Two fingers to zoom.' : 'Mark what you want removed';
+    const titles = { refine: 'Refine edges', erase: 'Remove objects', retouch: 'Retouch' };
+    const hints = { refine: 'Paint to erase or restore. Two fingers to zoom.', erase: 'Mark what you want removed', retouch: 'Brush over the area. Two fingers to zoom.' };
+    $('#brushTitle').textContent = titles[kind];
+    $('#brushHint').textContent = hints[kind];
     $('#brushHint').hidden = false;
     $('#brushModes').hidden = kind !== 'refine';
+    $('#retouchTools').hidden = $('#strengthRow').hidden = kind !== 'retouch';
     setMode('erase');
+    if (kind === 'retouch') { S.orig = img; S.strokeMask = makeCanvas(img.width, img.height); setTool(toolId); }
+    else { $('#retouchOpts').hidden = $('#retouchColors').hidden = true; }
     show(true);
     fit();
     draw();
+    // Scroll the tool row so the picked tool can be seen (only works once the screen is showing).
+    const on = kind === 'retouch' && $('#retouchTools .chip-btn.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
   });
 }
 
@@ -55,6 +66,34 @@ function setMode(m) {
   $$('#brushModes button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
 }
 
+// ---------- Retouch tool, option and colour ----------
+function setTool(id) {
+  const t = toolById(id);
+  S.tool = t;
+  S.opt = t.opts ? t.opts[0].id : null;
+  $('#brushStrength').value = t.strength;
+  $$('#retouchTools .chip-btn').forEach(b => b.classList.toggle('on', b.dataset.tool === t.id));
+  const on = $('#retouchTools .chip-btn.on');
+  if (on && on.offsetParent && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+  buildOptions();
+}
+function buildOptions() {
+  const t = S.tool;
+  const opts = $('#retouchOpts');
+  opts.hidden = !t.opts;
+  opts.innerHTML = (t.opts || []).map(o => `<button data-opt="${o.id}" class="${o.id === S.opt ? 'on' : ''}">${o.name}</button>`).join('');
+  opts.querySelectorAll('button').forEach(b => (b.onclick = () => { S.opt = b.dataset.opt; S.effect = null; buildOptions(); }));
+  const cols = colorsFor(t, S.opt);
+  if (!cols || !cols.includes(S.color)) S.color = cols ? cols[0] : null;
+  const sw = $('#retouchColors');
+  sw.hidden = !cols;
+  sw.innerHTML = (cols || []).map(c => `<button class="swatch${c === S.color ? ' on' : ''}" data-color="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`).join('');
+  sw.querySelectorAll('.swatch').forEach(b => (b.onclick = () => { S.color = b.dataset.color; S.effect = null; buildOptions(); }));
+  S.effect = null;
+  if (S.view) draw();
+}
+const strength = () => Number($('#brushStrength').value) / 100;
+
 // ---------- View (fit, zoom, pan) ----------
 function stageSize() {
   const r = $('#brushStage').getBoundingClientRect();
@@ -64,6 +103,7 @@ function fit() {
   const { w, h } = stageSize();
   const s = Math.min((w - 24) / S.img.width, (h - 24) / S.img.height);
   S.view = { scale: s, ox: (w - S.img.width * s) / 2, oy: (h - S.img.height * s) / 2 };
+  S.fitFor = w + 'x' + h;
 }
 const toImg = (x, y) => ({ x: (x - S.view.ox) / S.view.scale, y: (y - S.view.oy) / S.view.scale });
 
@@ -82,6 +122,7 @@ function draw() {
   if (!S) return;
   const cv = $('#brushView');
   const { w, h } = stageSize();
+  if (S.fitFor !== w + 'x' + h) fit(); // the area changed size (for example a row of swatches appeared)
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const cx = cv.getContext('2d');
@@ -97,6 +138,8 @@ function draw() {
     cx.drawImage(S.img, ox, oy, iw, ih);
     cx.globalAlpha = 1;
     cx.drawImage(S.cut, ox, oy, iw, ih);
+  } else if (S.kind === 'retouch') {
+    cx.drawImage(S.work || S.img, ox, oy, iw, ih);
   } else {
     cx.drawImage(S.img, ox, oy, iw, ih);
     cx.globalAlpha = 0.55;
@@ -139,6 +182,8 @@ function dab(p, r) {
     c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill();
     c.globalCompositeOperation = 'source-over';
     rebuildCut(p.x - r - 1, p.y - r - 1, r * 2 + 2, r * 2 + 2);
+  } else if (S.kind === 'retouch') {
+    retouchDab(p, r);
   } else {
     const c = ctx2d(S.paint);
     c.fillStyle = '#FF3B5C';
@@ -146,8 +191,63 @@ function dab(p, r) {
   }
 }
 
+// Soft round dab of the effect (or of the original, for Reshape > Restore).
+function retouchDab(p, r) {
+  const x0 = Math.max(0, Math.floor(p.x - r - 1)), y0 = Math.max(0, Math.floor(p.y - r - 1));
+  const x1 = Math.min(S.img.width, Math.ceil(p.x + r + 1)), y1 = Math.min(S.img.height, Math.ceil(p.y + r + 1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+  const soft = (c, ox, oy) => {
+    // Blush gets an extra-soft edge; the other tools keep a firmer centre for detail work.
+    const inner = S.tool.id === 'makeup' && S.opt === 'blush' ? 0 : 0.5;
+    const g = c.createRadialGradient(p.x - ox, p.y - oy, r * inner, p.x - ox, p.y - oy, r);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(p.x - ox, p.y - oy, r, 0, Math.PI * 2); c.fill();
+  };
+  const tmp = makeCanvas(w, h);
+  const tc = ctx2d(tmp);
+  const wc = ctx2d(S.work);
+  if (S.tool.id === 'reshape') {
+    // Restore: brush the original photo back in, a little at a time.
+    soft(tc, x0, y0);
+    tc.globalCompositeOperation = 'source-in';
+    tc.drawImage(S.orig, x0, y0, w, h, 0, 0, w, h);
+    wc.globalAlpha = strength() * 0.5;
+    wc.drawImage(tmp, x0, y0);
+    wc.globalAlpha = 1;
+    return;
+  }
+  // Grow this stroke's mask, then show the effect through it (never stronger than Strength).
+  soft(ctx2d(S.strokeMask), 0, 0);
+  tc.drawImage(S.effect, x0, y0, w, h, 0, 0, w, h);
+  tc.globalCompositeOperation = 'destination-in';
+  tc.drawImage(S.strokeMask, x0, y0, w, h, 0, 0, w, h);
+  wc.save();
+  wc.beginPath(); wc.rect(x0, y0, w, h); wc.clip();
+  wc.clearRect(x0, y0, w, h);
+  wc.drawImage(S.img, 0, 0);
+  wc.globalAlpha = strength();
+  wc.drawImage(tmp, x0, y0);
+  wc.restore();
+}
+
 function strokeTo(p) {
   const r = brushPx() / 2 / S.view.scale;
+  if (S.kind === 'retouch' && S.tool.id === 'reshape' && S.opt === 'move') {
+    // Reshape > Move: slide the pixels under the finger along with it, in small steps.
+    const last = S.stroke.last;
+    S.stroke.last = p;
+    if (!last) return;
+    const d = Math.hypot(p.x - last.x, p.y - last.y);
+    const n = Math.max(1, Math.ceil(d / (r * 0.15)));
+    for (let i = 0; i < n; i++) {
+      const cx = last.x + ((p.x - last.x) * i) / n, cy = last.y + ((p.y - last.y) * i) / n;
+      reshapeStep(S.work, cx, cy, (p.x - last.x) / n, (p.y - last.y) / n, r, 0.5 + strength() * 0.5);
+    }
+    return;
+  }
   const last = S.stroke.last;
   if (!last) { dab(p, r); S.stroke.last = p; return; }
   const d = Math.hypot(p.x - last.x, p.y - last.y);
@@ -168,6 +268,7 @@ function onDown(e) {
   S.pointers.set(e.pointerId, local(e));
   if (S.pointers.size === 1) {
     // Save a copy first so Undo can go back one stroke.
+    if (S.kind === 'retouch') startRetouchStroke();
     S.undo.push(S.kind === 'refine' ? copyCanvas(S.mask) : S.img);
     if (S.undo.length > 20) S.undo.shift();
     S.stroke = { last: null, painted: false };
@@ -187,8 +288,15 @@ function onDown(e) {
   draw();
 }
 
+function startRetouchStroke() {
+  if (!S.effect && S.tool.id !== 'reshape') S.effect = makeEffect(S.img, S.tool.id, S.opt, S.color);
+  S.work = copyCanvas(S.img);
+  ctx2d(S.strokeMask).clearRect(0, 0, S.img.width, S.img.height);
+}
+
 function cancelStroke() {
   const prev = S.undo.pop();
+  if (S.kind === 'retouch') { S.work = null; return; }
   if (S.kind === 'refine') { S.mask = prev; rebuildCut(0, 0, S.img.width, S.img.height); }
   else ctx2d(S.paint).clearRect(0, 0, S.paint.width, S.paint.height);
 }
@@ -223,6 +331,7 @@ async function onUp(e) {
     S.stroke = null;
     draw();
     if (painted && S.kind === 'erase') await runErase();
+    if (painted && S.kind === 'retouch' && S.work) { S.img = S.work; S.work = null; draw(); }
   }
 }
 
@@ -248,6 +357,7 @@ function onUndo() {
   if (!S || S.busy || !S.undo.length) return;
   const prev = S.undo.pop();
   if (S.kind === 'refine') { S.mask = prev; rebuildCut(0, 0, S.img.width, S.img.height); }
+  else if (S.kind === 'retouch') { S.img = prev; S.effect = null; }
   else { S.img = prev; ctx2d(S.paint).clearRect(0, 0, S.paint.width, S.paint.height); }
   draw();
 }
@@ -265,6 +375,8 @@ export function initBrush() {
     close(S.kind === 'refine' ? { mask: S.mask } : { img: S.img });
   };
   $$('#brushModes button').forEach(b => (b.onclick = () => setMode(b.dataset.mode)));
+  $('#retouchTools').innerHTML = RETOUCH_TOOLS.map(t => `<button class="chip-btn" data-tool="${t.id}">${t.name}</button>`).join('');
+  $$('#retouchTools .chip-btn').forEach(b => (b.onclick = () => S && !S.busy && setTool(b.dataset.tool)));
   $('#brushSize').addEventListener('input', () => {
     if (!S) return;
     const { w, h } = stageSize();

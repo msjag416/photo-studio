@@ -13,7 +13,8 @@ js/main.js         Starts the app: home screen, Create menu, photo pickers, rece
 js/editor.js       The editor: canvas, moving/resizing layers, tool panel, layers list, undo/redo, saving
 js/render.js       Draws each layer with its effects (colour, filters, cut-out, corners, outline, shadow)
 js/ai.js           Runs the two AI models (background removal and object removal)
-js/brush.js        Full-screen brush for "Refine edges" and "Remove objects"
+js/brush.js        Full-screen brush for "Refine edges", "Remove objects" and Retouch
+js/retouch.js      The colour math for the Retouch tools (no AI)
 js/screens.js      Full-screen text typing and the crop screen
 js/store.js        Saves projects on the device (browser database called IndexedDB)
 js/util.js         Small helpers: picture loading, blur, busy spinner, error box
@@ -45,6 +46,16 @@ tests/e2e.mjs      Automatic test that clicks through every step in real browser
 
 To stay smooth, the editor draws layers at up to 1400 pixels and remembers the last 40 drawings. Saving always uses the full size.
 
+**Retouch.** The photo panel has a Retouch section with seven tools for photos of people: Smooth skin (Smooth or Smoother), Whiten teeth, Eye colour, Brighten, Makeup (Lips or Blush), Hair colour and Reshape (Move or Restore). Each one opens the same brush screen, with a row to switch tools, the tool's own choices and colour swatches, a Brush size slider and a Strength slider. There's no AI here; `retouch.js` uses simple colour math:
+* For every tool except Reshape, the app first makes an "effect picture": the whole photo with the effect applied everywhere. Brushing reveals that picture only where you paint, never stronger than the Strength slider.
+* Smooth skin splits the photo into fine texture (pores) and broader shading (wrinkles, blotches), softens only the broader shading, and puts the fine texture back.
+* Whiten teeth takes out yellow and lightens, but leaves pink gums and lips alone.
+* Eye colour, lip colour and hair colour change the colour but keep the light and dark detail. Eye and lip colour leave very light and very dark spots alone (whites of the eyes, pupils, teeth).
+* Blush is a soft wash of colour with an extra-soft brush edge. Brighten lifts darker tones more than light ones.
+* Reshape > Move slides the pixels under your finger along with it, strongest in the middle of the brush. Restore brushes the original photo back.
+
+Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
+
 **Text.** Typing happens on a full screen with a row of fonts, colours and alignment. The text becomes a layer that can be moved, resized, rotated, outlined and shadowed like a photo. Tap selected text again to edit it.
 
 **Undo and redo.** After every finished action, such as letting go of a slider, finishing a move or applying a brush, the editor saves a copy of all layer settings, up to 30 steps. Pictures themselves are never edited in place. Every tool makes a new picture, so the steps can share pictures and use little memory.
@@ -66,6 +77,6 @@ Every error shows a box in plain words with a short "Details" line, instead of f
 
 ## Testing
 
-`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. It takes a screenshot of every step. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
+`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, every Retouch tool, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. For each Retouch tool, it brushes the right spot on the face (cheek, teeth, eyes, under the eyes, lips, cheeks, hair, jaw) and checks that the pixels there changed while a patch of plain background did not. It takes a screenshot of every step, plus close-ups of the face. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
 
 The test uses `tests/server.mjs`, a small web server that compresses files the same way GitHub Pages does. (An early version broke on GitHub Pages because of that compression, so the test now checks for it.) To run it yourself: start the server with `node tests/server.mjs . 8080`, then run `node tests/e2e.mjs http://localhost:8080/ test-shots chromium,webkit`.

@@ -65,6 +65,31 @@ async function run(engine, devName) {
     await page.mouse.up();
   };
 
+  // Read the pixels of the brush screen around photo points (512-px photo terms).
+  const sample = (pts, rad) => page.evaluate(({ pts, rad, iw }) => {
+    const st = document.querySelector('#brushStage').getBoundingClientRect();
+    const s = Math.min((st.width - 24) / iw, (st.height - 24) / iw);
+    const ox = (st.width - iw * s) / 2, oy = (st.height - iw * s) / 2;
+    const cv = document.querySelector('#brushView');
+    const dpr = cv.width / st.width;
+    const c = cv.getContext('2d');
+    const k = iw / 512;
+    return pts.map(([x, y]) => {
+      const R = Math.max(1, Math.round(rad * k * s * dpr));
+      const X = Math.round((ox + x * k * s) * dpr), Y = Math.round((oy + y * k * s) * dpr);
+      return Array.from(c.getImageData(X - R, Y - R, 2 * R, 2 * R).data);
+    });
+  }, { pts, rad, iw: Number(process.env.PHOTO_SIZE || 512) });
+  const diff = (a, b) => { let t = 0, n = 0; for (let i = 0; i < a.length; i += 4) { t += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); n += 3; } return t / n; };
+  // Close-up of the face on the brush screen.
+  const faceShot = async name => {
+    const box = await page.locator('#brushStage').boundingBox();
+    const iw = Number(process.env.PHOTO_SIZE || 512);
+    const s = Math.min((box.width - 24) / iw, (box.height - 24) / iw) * iw / 512;
+    const ox = box.x + (box.width - 512 * s) / 2, oy = box.y + (box.height - 512 * s) / 2;
+    await page.screenshot({ path: `${OUT}/${tag}-face-${name}.png`, clip: { x: ox + 150 * s, y: oy + 20 * s, width: 150 * s, height: 175 * s } });
+  };
+
   await page.goto(URL_);
   await step('home', async () => { await page.locator('.tile').first().waitFor(); });
 
@@ -104,6 +129,57 @@ async function run(engine, devName) {
     await shot('object-removed-screen');
     await page.locator('#brushDone').click();
     await page.locator('#editor.active').waitFor();
+  });
+
+  // ---------- Retouch: use every tool on its spot, check that only that spot changed ----------
+  const RETOUCH = [
+    { tool: 'smooth', opt: 'smoother', size: 22, strength: 90, at: [226, 84], rad: 6, strokes: [[[206, 80], [246, 80]], [[206, 88], [246, 88]], [[186, 122], [200, 130]]] },
+    { tool: 'whiten', size: 8, strength: 90, at: [224, 144], rad: 3, strokes: [[[210, 144], [238, 144]]] },
+    { tool: 'eyes', color: '#2F9467', size: 7, strength: 90, at: [204, 101], rad: 2, strokes: [[[203, 101], [206, 101]], [[244, 102], [247, 102]]] },
+    { tool: 'brighten', size: 10, strength: 90, at: [205, 111], rad: 3, strokes: [[[198, 111], [212, 111]], [[238, 112], [252, 112]]] },
+    { tool: 'makeup', opt: 'lips', color: '#C2185B', size: 6, strength: 90, at: [223, 150], rad: 2, strokes: [[[212, 149], [235, 149]], [[214, 139], [233, 139]]] },
+    { tool: 'makeup', opt: 'blush', color: '#E8709A', size: 16, strength: 90, at: [195, 127], rad: 4, strokes: [[[190, 125], [200, 129]], [[250, 125], [260, 129]]] },
+    { tool: 'hair', color: '#E6C77D', size: 16, strength: 90, at: [225, 46], rad: 5, strokes: [[[195, 40], [255, 40], [255, 52], [195, 52], [195, 62], [255, 62]]] },
+    { tool: 'reshape', opt: 'move', size: 30, strength: 70, at: [262, 150], rad: 4, strokes: [[[264, 150], [254, 150]]] },
+    { tool: 'reshape', opt: 'restore', size: 30, strength: 90, at: [262, 150], rad: 4, strokes: [[[262, 145], [262, 155]]] },
+  ];
+  await step('retouch-open', async () => {
+    await page.locator('[data-retouch=smooth]').click();
+    await page.locator('#brush.active').waitFor();
+    await faceShot('0-before');
+  });
+  const control = [[300, 30]]; // plain background, must never change
+  let controlBefore;
+  for (const t of RETOUCH) {
+    const name = 'retouch-' + (t.opt && t.tool !== 'smooth' ? t.opt : t.tool);
+    await step(name, async () => {
+      if (!controlBefore) controlBefore = await sample(control, 6);
+      await page.locator(`#retouchTools [data-tool=${t.tool}]`).click();
+      if (t.opt) await page.locator(`#retouchOpts [data-opt=${t.opt}]`).click();
+      if (t.color) await page.locator(`#retouchColors [data-color="${t.color}"]`).click();
+      await page.locator('#brushStrength').fill(String(t.strength));
+      const before = await sample([t.at], t.rad);
+      for (const st of t.strokes) await paint(st, t.size);
+      await page.waitForTimeout(100);
+      const after = await sample([t.at], t.rad);
+      const d = diff(before[0], after[0]);
+      await faceShot(name);
+      if (d < 2) throw new Error(`${name} changed its spot by only ${d.toFixed(2)} (expected a visible change)`);
+      const c = diff(controlBefore[0], (await sample(control, 6))[0]);
+      if (c > 0.5) throw new Error(`${name} changed the background too (${c.toFixed(2)})`);
+    });
+  }
+  await step('retouch-undo-apply', async () => {
+    // Undo inside the screen takes back the last stroke, then apply with the check mark.
+    await page.locator('#brushUndo').click();
+    await page.locator('#brushDone').click();
+    await page.locator('#editor.active').waitFor();
+    // Editor undo and redo swap the whole retouch in and out.
+    await page.locator('#undoBtn').click();
+    await page.waitForTimeout(200);
+    await shot('retouch-editor-undo');
+    await page.locator('#redoBtn').click();
+    await page.waitForTimeout(200);
   });
 
   await step('outline', async () => {
