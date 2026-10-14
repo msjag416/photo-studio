@@ -505,7 +505,7 @@ function onUndo() {
   const prev = S.undo.pop();
   if (S.kind === 'refine') { S.mask = prev; rebuildCut(0, 0, S.img.width, S.img.height); }
   else if (S.kind === 'retouch') { S.img = prev; S.effect = null; }
-  else if (S.kind === 'patch') { S.img = prev; S.work = copyCanvas(S.img); S.patchBox = null; S.dirty = false; renderPatch(); }
+  else if (S.kind === 'patch') { S.img = prev; S.work = copyCanvas(S.img); S.patchBox = null; S.dirty = false; } // show the photo without a patch until a circle moves
   else { S.img = prev; ctx2d(S.paint).clearRect(0, 0, S.paint.width, S.paint.height); }
   draw();
 }
