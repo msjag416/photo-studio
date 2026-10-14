@@ -32,21 +32,26 @@ async function loadOrt() {
 }
 
 // Download a model with a progress bar. The browser keeps a copy, so later visits are faster.
+// The pieces are collected as they arrive. The size the server reports is only used for the
+// progress bar, because servers like GitHub Pages report the smaller, compressed size.
 async function download(url, label) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Download failed (${res.status}) for ${url}`);
   const total = Number(res.headers.get('content-length')) || 0;
-  if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+  if (!res.body) return new Uint8Array(await res.arrayBuffer());
   const reader = res.body.getReader();
-  const out = new Uint8Array(total);
+  const parts = [];
   let got = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    out.set(value, got);
+    parts.push(value);
     got += value.length;
-    busy(`Getting the ${label} ready (first time only)…`, got / total);
+    if (total) busy(`Getting the ${label} ready (first time only)…`, Math.min(1, got / total));
   }
+  const out = new Uint8Array(got);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
   return out;
 }
 
