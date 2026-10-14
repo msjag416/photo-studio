@@ -36,7 +36,7 @@ tests/e2e.mjs      Automatic test that clicks through every step in real browser
 
 **Refine edges.** This opens the brush screen with the cut-out on a checkerboard and a faint copy of the original underneath. Erase paints the mask away, and Restore paints it back. One finger paints, and two fingers zoom and move. The check mark keeps your changes and the X throws them away.
 
-**Remove objects.** You paint over the thing you want gone, and when your finger lifts `ai.js` runs the MI-GAN model. The app first closes small gaps between your strokes and grows the painted area a little, so no edge of the object is left behind. The whole photo goes to the model, which zooms in on the hole by itself and fills it to match the surroundings. Only the painted area (with soft edges) is taken from the result. You can repeat this as many times as you like, use undo inside the screen, then tap the check mark to keep the result.
+**Remove objects.** You paint over the thing you want gone, and when your finger lifts `ai.js` runs the MI-GAN model. To keep it precise, the app only closes tiny gaps between your strokes and grows the painted area by about 2 pixels, in a round shape, so the removal follows your brush. Zoom in with two fingers for fine work like a single brow hair or a blemish. The whole photo goes to the model, which zooms in on the hole by itself and fills it to match the surroundings. Only the painted area (with soft edges) is taken from the result. You can repeat this as many times as you like, use undo inside the screen, then tap the check mark to keep the result.
 
 **Other tools.** These are drawn by `render.js` each time the picture changes:
 * Adjust (brightness, contrast, saturation, warmth), filters and enhance are worked out pixel by pixel.
@@ -51,10 +51,10 @@ To stay smooth, the editor draws layers at up to 1400 pixels and remembers the l
 **Retouch.** The photo panel has a Retouch section with seven tools for photos of people: Smooth skin (Smooth or Smoother), Whiten teeth, Eye colour, Brighten, Makeup (Lips or Blush), Hair colour and Reshape (Move or Restore). Each one opens the same brush screen, with a row to switch tools, the tool's own choices and colour swatches, a Brush size slider and a Strength slider. There's no AI here; `retouch.js` uses simple colour math:
 * For every tool except Reshape, the app first makes an "effect picture": the whole photo with the effect applied everywhere. Brushing reveals that picture only where you paint, never stronger than the Strength slider.
 * Smooth skin splits the photo into fine texture (pores) and broader shading (wrinkles, blotches), softens only the broader shading, and puts the fine texture back.
-* Whiten teeth takes out yellow and lightens, but leaves pink gums and lips alone.
+* Whiten teeth takes out most of the yellow and lightens clearly (it starts at strength 70), but leaves pink gums and lips alone.
 * Eye colour, lip colour and hair colour change the colour but keep the light and dark detail. Eye colour leaves very light and very dark spots alone (whites of the eyes, pupils). Lip colour only colours pinkish-red pixels (much more red than green), so teeth stay white even when the brush goes over them.
 * Blush is a soft wash of colour with an extra-soft brush edge. Brighten lifts darker tones more than light ones.
-* Reshape > Move slides the pixels under your finger along with it, strongest in the middle of the brush. Restore brushes the original photo back.
+* Reshape > Move carries the picture under the middle of the brush fully along with your finger, softening toward the edge, like the "push" tool in professional editors. It works inside the larger head area, so cheek, jaw and lip edges can move. It picks a wide brush when chosen. Restore brushes the original photo back.
 
 On every brush screen, two fingers zoom up to 16 times and move around, so small spots like a blemish are easy to brush. Fit zooms back out. Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
 

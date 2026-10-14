@@ -76,9 +76,12 @@ function setTool(id) {
   const t = toolById(id);
   S.tool = t;
   S.opt = t.opts ? t.opts[0].id : null;
-  // Where brushing is allowed: the selected face (a bigger area for hair), or everywhere.
-  S.faceMask = S.face ? faceMask(S.face, S.img.width, S.img.height, t.id === 'hair' ? 'head' : 'face') : null;
+  // Where brushing is allowed: the selected face (a bigger head area for hair colour and for
+  // reshaping, so the cheek and jaw edges can move), or everywhere.
+  S.faceMask = S.face ? faceMask(S.face, S.img.width, S.img.height, t.id === 'hair' || t.id === 'reshape' ? 'head' : 'face') : null;
   $('#brushStrength').value = t.strength;
+  // Reshaping cheeks, lips or a jaw needs a wide, soft brush.
+  if (t.id === 'reshape' && Number($('#brushSize').value) < 70) $('#brushSize').value = 70;
   $$('#retouchTools .chip-btn').forEach(b => b.classList.toggle('on', b.dataset.tool === t.id));
   const on = $('#retouchTools .chip-btn.on');
   if (on && on.offsetParent && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -277,7 +280,7 @@ function strokeTo(p) {
     const n = Math.max(1, Math.ceil(d / (r * 0.15)));
     for (let i = 0; i < n; i++) {
       const cx = last.x + ((p.x - last.x) * i) / n, cy = last.y + ((p.y - last.y) * i) / n;
-      reshapeStep(S.work, cx, cy, (p.x - last.x) / n, (p.y - last.y) / n, r, 0.5 + strength() * 0.5);
+      reshapeStep(S.work, cx, cy, (p.x - last.x) / n, (p.y - last.y) / n, r, 0.75 + strength() * 0.25);
     }
     keepOutsideFace(Math.min(last.x, p.x) - r - 3, Math.min(last.y, p.y) - r - 3, Math.abs(p.x - last.x) + r * 2 + 6, Math.abs(p.y - last.y) + r * 2 + 6);
     return;

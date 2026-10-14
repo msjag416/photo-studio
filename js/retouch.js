@@ -6,7 +6,7 @@ import { makeCanvas, ctx2d, blurCanvas } from './util.js';
 export const RETOUCH_TOOLS = [
   { id: 'smooth', name: 'Smooth skin', icon: 'sparkle', strength: 60,
     opts: [{ id: 'smooth', name: 'Smooth' }, { id: 'smoother', name: 'Smoother' }] },
-  { id: 'whiten', name: 'Whiten teeth', icon: 'tooth', strength: 55 },
+  { id: 'whiten', name: 'Whiten teeth', icon: 'tooth', strength: 70 },
   { id: 'eyes', name: 'Eye colour', icon: 'eye', strength: 45,
     colors: ['#3F7FCF', '#2F9467', '#8B5E34', '#7D8E9C', '#6A4BB0', '#1C5A86'] },
   { id: 'brighten', name: 'Brighten', icon: 'sun', strength: 40 },
@@ -68,9 +68,9 @@ export function makeEffect(img, toolId, opt, color) {
         // Gums and lips (pink or red: much more red than green) and dark gaps are left alone.
         const w = (1 - Math.min(1, Math.max(0, (r - g - 18) / 25))) * Math.min(1, Math.max(0, (y - 70) / 60));
         const yb = Math.max(0, (r + g) / 2 - b);
-        let nr = r, ng = g, nb = b + yb * 0.5;
-        nr = y + (nr - y) * 0.55; ng = y + (ng - y) * 0.55; nb = y + (nb - y) * 0.55;
-        nr += (255 - nr) * 0.3; ng += (255 - ng) * 0.3; nb += (255 - nb) * 0.3;
+        let nr = r, ng = g, nb = b + yb * 0.7;
+        nr = y + (nr - y) * 0.35; ng = y + (ng - y) * 0.35; nb = y + (nb - y) * 0.35;
+        nr += (255 - nr) * 0.45; ng += (255 - ng) * 0.45; nb += (255 - nb) * 0.45;
         r += (nr - r) * w; g += (ng - g) * w; b += (nb - b) * w;
       } else if (toolId === 'brighten') {
         // Lift darker tones more than light ones, so nothing washes out.
@@ -111,9 +111,12 @@ export function reshapeStep(work, cx, cy, dx, dy, r, strength) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const px = x + x0 - cx, py = y + y0 - cy;
-      const q = (px * px + py * py) / r2;
+      const q = Math.sqrt((px * px + py * py) / r2);
       if (q >= 1) continue;
-      const f = (1 - q) * (1 - q) * strength;
+      // The middle of the brush carries the picture fully along with the finger; it softens
+      // toward the edge so there is no seam.
+      const e = Math.min(1, Math.max(0, (q - 0.25) / 0.75));
+      const f = (1 - e * e * (3 - 2 * e)) * strength;
       // Take the colour from where this pixel "came from" (smooth sampling between pixels).
       const sx = Math.min(w - 1, Math.max(0, x - dx * f)), sy = Math.min(h - 1, Math.max(0, y - dy * f));
       const ix = Math.floor(sx), iy = Math.floor(sy), fx = sx - ix, fy = sy - iy;
