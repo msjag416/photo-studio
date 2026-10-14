@@ -267,6 +267,7 @@ async function run(engine, devName) {
       const cx = 820, cy = 510, R = 12; // a spot on the forehead
       pc.fillStyle = '#f00'; pc.beginPath(); pc.arc(cx, cy, R, 0, 7); pc.fill();
       const out = await ai.removeObjects(big, paint);
+      u.busy(false); // the app's screens normally hide the spinner afterwards
       const a = big.getContext('2d').getImageData(cx - 80, cy - 80, 160, 160).data, b = out.getContext('2d').getImageData(cx - 80, cy - 80, 160, 160).data;
       let far = 0, maxD = 0;
       for (let y = 0; y < 160; y++) for (let x = 0; x < 160; x++) {
