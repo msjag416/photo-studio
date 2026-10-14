@@ -22,7 +22,8 @@ jobs:
       - name: Start a local web server that compresses files like GitHub Pages
         run: (node tests/server.mjs . 8080 &) && sleep 3
       - name: Run the test
-        run: node tests/e2e.mjs http://localhost:8080/ test-shots webkit,chromium
+        # A virtual screen, so the browsers get a (software) graphics chip for the face finder.
+        run: HEADED=1 xvfb-run -a node tests/e2e.mjs http://localhost:8080/ test-shots webkit,chromium
       - name: Save screenshots to the test-shots branch
         if: always()
         run: |

@@ -75,7 +75,7 @@ export async function openEditor(project, opts = {}, exit) {
   $('#editor').classList.add('active');
   await nextFrame();
   fit(); commit(); draw(); buildPanel();
-  for (const L of P.layers) if (L.type === 'photo') ensureFaces(L, true); // find faces in the background
+  for (const L of P.layers) if (L.type === 'photo') ensureFaces(L, 'quiet'); // find faces in the background
   if (opts.then === 'bg' && sel()) await doRemoveBg();
   if (opts.then === 'erase' && sel()) await doEraseObjects();
 }
@@ -235,8 +235,11 @@ function drawFaceOutlines(cx, L) {
 // ---------------- Faces ----------------
 // Find the faces in a photo layer (once per picture). Each face keeps its id when the photo
 // changes, matched by position, so its settings stay with the same person.
+// mode: 'quiet' (in the background), 'soft' (tools that also work without faces: a short note
+// on failure) or 'strict' (tools that need faces: an error box on failure).
 const pendingFaces = new Map();
-async function ensureFaces(L, quiet = false) {
+async function ensureFaces(L, mode = 'strict') {
+  const quiet = mode !== 'strict' && mode !== 'soft';
   if (!L || L.type !== 'photo') return [];
   if (L.faces && L.facesFor === L.img._id) return L.faces;
   const img = L.img;
@@ -254,7 +257,8 @@ async function ensureFaces(L, quiet = false) {
     if (quiet && L.faces.length > 1 && P && sel() === L) toast(`Found ${L.faces.length} faces. Tap one to choose who to edit.`);
   } catch (err) {
     pendingFaces.delete(img);
-    if (!quiet) showError('Faces could not be found in this photo. Please try again.', err);
+    if (mode === 'strict') showError('Faces could not be found in this photo. Please try again.', err);
+    else if (mode === 'soft') toast('Faces could not be found, so the brush works on the whole photo.');
     else console.warn('Face finding failed', err);
     return [];
   } finally {
@@ -422,7 +426,7 @@ async function doEraseObjects() {
 async function doRetouch(toolId) {
   const L = sel();
   if (!L || L.type !== 'photo') return;
-  const faces = await ensureFaces(L);
+  const faces = await ensureFaces(L, 'soft');
   const res = await openBrush('retouch', L, toolId, faces.length ? selFace(L) : null);
   fit(); draw();
   if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
@@ -965,6 +969,7 @@ export function addPhoto(img) {
   P.layers.push(L);
   selId = L.id; tool = null;
   commit(); draw(); buildPanel();
+  ensureFaces(L, 'quiet');
 }
 export const isOpen = () => !!P;
 

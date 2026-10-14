@@ -22,7 +22,9 @@ fs.mkdirSync(OUT, { recursive: true });
 const results = [];
 
 async function run(engine, devName) {
-  const browser = await pw[engine].launch();
+  // HEADED=1 shows a real window (on GitHub inside a virtual screen), which gives WebKit a
+  // working graphics chip (WebGL) for the face finder.
+  const browser = await pw[engine].launch({ headless: !process.env.HEADED });
   const ctx = await browser.newContext({ ...DEVICES[devName], acceptDownloads: true });
   const page = await ctx.newPage();
   const errors = [];
