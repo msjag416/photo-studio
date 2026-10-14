@@ -16,6 +16,7 @@ js/ai.js           Runs the two AI models (background removal and object removal
 js/brush.js        Full-screen brush for "Refine edges", "Remove objects" and Retouch
 js/retouch.js      The colour math for the Retouch tools (no AI)
 js/faces.js        Finds faces (MediaPipe Face Landmarker), gives each one an id, face areas
+js/faceshape.js    Face Shape sliders: smooth warps placed with the face points
 js/brows.js        Eyebrows: shapes from the face points, styles, drawing, removing the original brows
 js/screens.js      Full-screen text typing and the crop screen
 js/store.js        Saves projects on the device (browser database called IndexedDB)
@@ -72,6 +73,11 @@ On every brush screen, two fingers zoom up to 16 times and move around, so small
 * Styles with a different shape first remove the original brows. The brow areas are filled from the skin around them, using only skin-coloured pixels: they're averaged at smaller and smaller sizes, then the holes are filled back in from those averages, with a little skin grain added. This copy of the photo is made once (`layer.noBrows`) and saved with the project.
 * Limit: no free AI can grow truly photo-real new brow hair, so the hairs are drawn. They look natural at normal viewing size, less so when zoomed far in. On very small faces (brows only a few pixels tall) the removed-brow areas can look patchy.
 
+**Face Shape.** The Face Shape panel works on the selected face. It has sliders for Slim face, Cheeks (slimmer or fuller), Mouth width, Lip fullness, Smile lift and Nose (narrower or wider), plus Hold to see before and Reset face shape. Like the eyebrows, it never changes the photo itself: each face's slider values are stored on the layer (`layer.shape`, one entry per face id) and applied every time the photo is drawn, so undo, redo, reset and saving all work. How it works (`faceshape.js`):
+* Each slider adds a few soft "moves" placed with the face points. Slim face pulls the jaw outline toward the middle of the face. Mouth width and nose stretch or squeeze the area around them, along the face's own direction. Smile lift raises the mouth corners.
+* For every pixel, the moves near it add up to an offset, and the pixel shows what was at that offset, with smooth sampling between pixels. So the whole area shifts as one smooth piece, evenly on both sides, with no seams.
+* Things right next to the face, like earrings or hair at the jaw, can bend slightly at high amounts. Professional apps do the same, and small amounts look most natural.
+
 **Text.** Typing happens on a full screen with a row of fonts, colours and alignment. The text becomes a layer that can be moved, resized, rotated, outlined and shadowed like a photo. Tap selected text again to edit it.
 
 **Undo and redo.** After every finished action, such as letting go of a slider, finishing a move or applying a brush, the editor saves a copy of all layer settings, up to 30 steps. Pictures themselves are never edited in place. Every tool makes a new picture, so the steps can share pictures and use little memory.
@@ -99,6 +105,6 @@ Every error shows a box in plain words with a short "Details" line, instead of f
 * With Face 1 selected, it brushes across both faces, then uses Auto Fix Brows, a style, a slider, a colour, Hold to see before, undo, redo and Reset brows.
 * It saves the picture and checks that Face 1 changed while Face 2 is identical to the original photo.
 
-Last, it opens `tests/three-people.jpg` and checks that all three faces are found. The test photos are made from public domain NASA and scikit-image pictures. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
+It also sets every Face Shape slider to full strength and lets the face AI measure the result, for example that the mouth really got wider or the jaw slimmer. Last, it opens `tests/three-people.jpg` and checks that all three faces are found. The test photos are made from public domain NASA and scikit-image pictures. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
 
 The test uses `tests/server.mjs`, a small web server that compresses files the same way GitHub Pages does. (An early version broke on GitHub Pages because of that compression, so the test now checks for it.) To run it yourself: start the server with `node tests/server.mjs . 8080`, then run `node tests/e2e.mjs http://localhost:8080/ test-shots chromium,webkit`.

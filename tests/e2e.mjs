@@ -302,6 +302,34 @@ async function run(engine, devName) {
     results.push({ tag, name: `  removal reached ${res.maxD.toFixed(1)} px for a 12 px dot`, ok: true, ms: 0 });
   });
 
+  await step('face-shape-measured', async () => {
+    // Each slider at full strength must really change the face: the face AI measures the result.
+    const r = await page.evaluate(async () => {
+      const u = await import('/js/util.js'); const fc = await import('/js/faces.js'); const rd = await import('/js/render.js');
+      const img = await u.fileToCanvas(await (await fetch('/tests/person.png')).blob());
+      const [face] = await fc.detectFaces(img);
+      const dist = (f, a, b) => Math.hypot(f.pts[a * 2] - f.pts[b * 2], f.pts[a * 2 + 1] - f.pts[b * 2 + 1]);
+      const base = { type: 'photo', img, faces: [face], facesFor: img._id, crop: null, adj: {}, filter: 'none', outline: { on: false }, shadow: { on: false }, opacity: 100 };
+      const render = sh => rd.renderLayer({ ...base, shape: sh ? { [face.id]: sh } : null }, 100000).canvas;
+      const [f0] = await fc.detectFaces(render(null));
+      const pct = async (sh, m) => { const [f1] = await fc.detectFaces(render(sh)); return (m(f1) - m(f0)) / Math.abs(m(f0)) * 100; };
+      return {
+        slim: await pct({ slim: 100 }, f => dist(f, 172, 397)),
+        mouthWider: await pct({ mouth: 100 }, f => dist(f, 61, 291)),
+        mouthNarrower: await pct({ mouth: -100 }, f => dist(f, 61, 291)),
+        lipsFuller: await pct({ lips: 100 }, f => dist(f, 0, 17)),
+        noseWider: await pct({ nose: 100 }, f => dist(f, 129, 358)),
+        cheeksFuller: await pct({ cheeks: 100 }, f => dist(f, 234, 454)),
+        smileLift: await pct({ smile: 100 }, f => (f.pts[61 * 2 + 1] + f.pts[291 * 2 + 1]) / 2 - f.pts[13 * 2 + 1]),
+      };
+    });
+    const need = { slim: -4, mouthWider: 4, mouthNarrower: -4, lipsFuller: 4, noseWider: 3, cheeksFuller: 3, smileLift: -15 };
+    for (const [k, lim] of Object.entries(need)) {
+      if (lim < 0 ? r[k] > lim : r[k] < lim) throw new Error(`${k}: measured ${r[k].toFixed(1)}%, needed ${lim}%`);
+    }
+    results.push({ tag, name: '  shape: ' + Object.entries(r).map(([k, v]) => `${k} ${v.toFixed(1)}%`).join(', '), ok: true, ms: 0 });
+  });
+
   await step('outline', async () => {
     await page.locator('[data-tool=outline]').click();
     await page.locator('.switch-row input').check();
@@ -488,6 +516,28 @@ async function run(engine, devName) {
     await page.locator('[data-style=bold]').click();
     await idle();
     await page.waitForTimeout(300);
+  });
+
+  await step('face-shape-panel', async () => {
+    // Face 1 is selected. Use the panel, then check Face 2 is untouched when saved.
+    if (await page.locator('#panel [data-back]').count()) await page.locator('#panel [data-back]').click();
+    await page.locator('[data-tool=shape]').click();
+    await page.locator('#panel .slider-row', { hasText: 'Mouth width' }).waitFor();
+    for (const [name, v] of [['Slim face', '70'], ['Mouth width', '60'], ['Lip fullness', '60'], ['Smile lift', '80']]) {
+      const inp = page.locator('#panel .slider-row', { hasText: name }).locator('input');
+      await inp.fill(v);
+      await inp.dispatchEvent('change');
+    }
+    await page.waitForTimeout(500);
+    await shot('face-shape-set');
+    const btn = page.locator('#panel [data-before]');
+    const b = await btn.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down(); await page.waitForTimeout(300);
+    await shot('face-shape-holding-before');
+    await page.mouse.up(); await page.waitForTimeout(300);
+    await page.locator('#undoBtn').click(); await page.waitForTimeout(200);
+    await page.locator('#redoBtn').click(); await page.waitForTimeout(200);
   });
 
   await step('faces-save-other-face-untouched', async () => {

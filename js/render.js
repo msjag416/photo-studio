@@ -3,6 +3,7 @@
 // corners, outline). Then it is placed on the main canvas (position, size, turn, shadow).
 import { makeCanvas, ctx2d, blurCanvas } from './util.js';
 import { drawBrows } from './brows.js';
+import { applyShape, hasShape } from './faceshape.js';
 
 export const FILTERS = [
   { id: 'none', name: 'Original' },
@@ -93,6 +94,11 @@ function renderPhoto(L, cap) {
   // Eyebrows, drawn fresh from each face's settings (the photo itself is never changed).
   if (L.brows && L.faces && !L.browsOff) {
     for (const f of L.faces) if (L.brows[f.id]) drawBrows(c, L, f, L.brows[f.id], crop, s);
+  }
+
+  // Face Shape, also drawn fresh from each face's slider values.
+  if (L.shape && L.faces && !L.shapeOff) {
+    for (const f of L.faces) if (hasShape(L.shape[f.id])) applyShape(c, f, L.shape[f.id], crop, s);
   }
 
   colourPass(c, L);

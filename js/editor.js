@@ -7,6 +7,7 @@ import { detectFaces, matchFaces, faceAt } from './faces.js';
 import { BROW_STYLES, AUTO_FIX, DEFAULT_BROWS, styleParams, matchColor, removeBrows, drawBrows, naturalShapes } from './brows.js';
 import { openBrush } from './brush.js';
 import { RETOUCH_TOOLS } from './retouch.js';
+import { SHAPE_SLIDERS, hasShape } from './faceshape.js';
 import { openText, openCrop, COLORS } from './screens.js';
 import { saveProject } from './store.js';
 
@@ -38,7 +39,8 @@ export function photoLayer(img, P0, fill = false) {
 // (tools always make a new canvas), so steps can share them safely.
 function cloneLayer(L) {
   const brows = L.brows ? Object.fromEntries(Object.entries(L.brows).map(([k, v]) => [k, { ...v }])) : null;
-  return { ...L, adj: { ...L.adj }, outline: { ...L.outline }, shadow: { ...L.shadow }, crop: L.crop ? { ...L.crop } : null, brows, browColor: L.browColor ? { ...L.browColor } : null };
+  const shape = L.shape ? Object.fromEntries(Object.entries(L.shape).map(([k, v]) => [k, { ...v }])) : null;
+  return { ...L, adj: { ...L.adj }, outline: { ...L.outline }, shadow: { ...L.shadow }, crop: L.crop ? { ...L.crop } : null, brows, shape, browColor: L.browColor ? { ...L.browColor } : null };
 }
 function snapshot() {
   return { w: P.w, h: P.h, bg: P.bg, layers: P.layers.map(cloneLayer), selId };
@@ -157,7 +159,7 @@ function drawNow() {
   cx.restore();
   const L = sel();
   if (L && !L.hidden) drawSelection(cx, L);
-  if (L && !L.hidden && L.type === 'photo' && L.faces && (L.faces.length > 1 || tool === 'brows')) drawFaceOutlines(cx, L);
+  if (L && !L.hidden && L.type === 'photo' && L.faces && (L.faces.length > 1 || tool === 'brows' || tool === 'shape')) drawFaceOutlines(cx, L);
   $('#refineBtn').hidden = !(L && L.type === 'photo' && L.mask && !tool);
   $('#fitBtn').hidden = !view.zoomed;
 }
@@ -527,6 +529,7 @@ function buildPanel() {
       <div class="panel-sub">Retouch</div>
       ${faceChooser(L)}
       <div class="tools">
+        <button class="tool" data-tool="shape">${icon('reshape')}Face Shape</button>
         <button class="tool" data-tool="brows">${icon('brow')}Eyebrows</button>
         ${RETOUCH_TOOLS.map(t => `<button class="tool" data-retouch="${t.id}">${icon(t.icon)}${t.name}</button>`).join('')}
       </div>`;
@@ -591,6 +594,10 @@ async function openTool(id) {
   }
   if (id === 'enhance') { L.enhance = !L.enhance; commit(); draw(); buildPanel(); toast(L.enhance ? 'Enhanced' : 'Enhance off'); return; }
   if (id === 'blur' && !(await ensureSubject(L))) return;
+  if (id === 'shape') {
+    const faces = await ensureFaces(L);
+    if (!faces.length) { toast('No face was found in this photo.'); return; }
+  }
   if (id === 'brows') {
     const faces = await ensureFaces(L);
     if (!faces.length) { toast('No face was found in this photo.'); return; }
@@ -641,13 +648,14 @@ function colourRow(get, set, withNone = false) {
 }
 
 function toolPanel(panel, L) {
-  const titles = Object.fromEntries([...PHOTO_TOOLS, ...TEXT_TOOLS, ['brows', 'Eyebrows']].map(([id, n]) => [id, n]));
+  const titles = Object.fromEntries([...PHOTO_TOOLS, ...TEXT_TOOLS, ['brows', 'Eyebrows'], ['shape', 'Face Shape']].map(([id, n]) => [id, n]));
   panel.innerHTML = header(titles[tool] || '');
   panel.querySelector('[data-back]').onclick = () => { tool = null; picking = null; $('#pickHint').hidden = true; buildPanel(); draw(); };
   const add = el => panel.appendChild(el);
   const note = t => { const p = document.createElement('p'); p.className = 'panel-note'; p.textContent = t; add(p); };
 
   if (tool === 'brows') return browsPanel(panel, L, add, note);
+  if (tool === 'shape') return shapePanel(panel, L, add, note);
   if (tool === 'adjust') {
     add(slider('Brightness', -100, 100, () => L.adj.bright, v => (L.adj.bright = v)));
     add(slider('Contrast', -100, 100, () => L.adj.contrast, v => (L.adj.contrast = v)));
@@ -846,6 +854,35 @@ function browsPanel(panel, L, add, note) {
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => before.addEventListener(ev, off));
   row.querySelector('[data-reset]').onclick = () => {
     if (L.brows && L.brows[face.id]) { L.brows = { ...L.brows }; delete L.brows[face.id]; commit(); draw(); buildPanel(); }
+  };
+  add(row);
+}
+
+// ---------------- Face Shape panel ----------------
+function shapePanel(panel, L, add, note) {
+  const face = selFace(L);
+  if (!face) { note('No face found.'); return; }
+  const cur = () => (L.shape && L.shape[face.id]) || {};
+  const setV = (k, val) => {
+    L.shape = { ...(L.shape || {}) };
+    L.shape[face.id] = { ...cur(), [k]: val };
+  };
+  const wrap = document.createElement('div');
+  wrap.innerHTML = faceChooser(L);
+  add(wrap);
+  wireFaceChooser(wrap, L);
+  note('Each slider reshapes the whole area smoothly and evenly on both sides. Small amounts look most natural.');
+  for (const sl of SHAPE_SLIDERS) add(slider(sl.name, sl.min, sl.max, () => cur()[sl.id] || 0, v => setV(sl.id, v)));
+  const row = document.createElement('div');
+  row.className = 'row-btns';
+  row.innerHTML = `<button class="chip-btn" data-before>Hold to see before</button><button class="chip-btn" data-reset>Reset face shape</button>`;
+  const before = row.querySelector('[data-before]');
+  const on = e => { e.preventDefault(); L.shapeOff = true; draw(); };
+  const off = () => { if (L.shapeOff) { delete L.shapeOff; draw(); } };
+  before.addEventListener('pointerdown', on);
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => before.addEventListener(ev, off));
+  row.querySelector('[data-reset]').onclick = () => {
+    if (L.shape && hasShape(L.shape[face.id])) { L.shape = { ...L.shape }; delete L.shape[face.id]; commit(); draw(); buildPanel(); }
   };
   add(row);
 }
