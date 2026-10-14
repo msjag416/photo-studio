@@ -326,6 +326,40 @@ async function run(engine, devName) {
     results.push({ tag, name: '  shape: ' + Object.entries(r).map(([k, v]) => `${k} ${v.toFixed(1)}%`).join(', '), ok: true, ms: 0 });
   });
 
+  await step('patch-copy-paste', async () => {
+    // Open Patch, drag "copy from" onto the dark helmet and "paste here" onto the plain wall,
+    // stamp it, and check: the wall spot now looks like the helmet, far-away pixels are unchanged,
+    // Undo on the patch screen brings the wall back, and the check mark keeps a new patch.
+    if (await page.locator('#panel [data-back]').count()) await page.locator('#panel [data-back]').click();
+    await page.locator('[data-tool=patch]').click();
+    await page.locator('#brush.active').waitFor();
+    const iw = Number(process.env.PHOTO_SIZE || 512), k = iw / 512;
+    const g = async () => { const r = await page.locator('#brushStage').boundingBox(); const s = Math.min((r.width - 24) / iw, (r.height - 24) / iw); return { s, P: ([x, y]) => [r.x + (r.width - iw * s) / 2 + x * k * s, r.y + (r.height - iw * s) / 2 + y * k * s] }; };
+    const G = await g();
+    const R0 = 70 / G.s / k; // starting circle radius, in 512-px terms
+    const dst0 = [512 * 0.45, 512 * 0.45], src0 = [Math.min(512 - R0, dst0[0] + R0 * 2.4), dst0[1]];
+    await page.locator('#brushSize').fill(String(Math.round(40 * k * G.s))); // radius 20 (512 terms)
+    await page.locator('#brushSize').dispatchEvent('input');
+    const drag = async (a, c) => { await page.mouse.move(...G.P(a)); await page.mouse.down(); await page.mouse.move(...G.P(c), { steps: 10 }); await page.mouse.up(); await page.waitForTimeout(150); };
+    const HELMET = [395, 440], WALL = [90, 230];
+    const px = ([x, y], r = 3) => page.evaluate(([x, y, r]) => { const c = document.querySelector('#brushView'), b = c.getBoundingClientRect(), q = c.width / b.width; return Array.from(c.getContext('2d').getImageData((x - b.x) * q - r, (y - b.y) * q - r, 2 * r, 2 * r).data); }, [...G.P([x, y]), r]);
+    const wallBefore = await px(WALL), helmet = await px(HELMET), farBefore = await px([300, 60]);
+    await drag(src0, HELMET);
+    await drag(dst0, WALL);
+    await page.locator('#patchApply').click();
+    await page.waitForTimeout(150);
+    await shot('patch-stamped');
+    const wallAfter = await px(WALL);
+    if (diff(wallAfter, helmet) > 25) throw new Error(`The pasted spot doesn't look like the copied spot (${diff(wallAfter, helmet).toFixed(1)})`);
+    if (diff(wallBefore, wallAfter) < 40) throw new Error('The paste spot did not change');
+    if (diff(farBefore, await px([300, 60])) > 1) throw new Error('A far-away spot changed');
+    await page.locator('#brushUndo').click(); await page.waitForTimeout(150);
+    if (diff(wallBefore, await px(WALL)) > 2) throw new Error('Undo did not bring the original back');
+    await drag(WALL, [100, 240]); // move "paste here" a little: a new patch, kept by the check mark
+    await page.locator('#brushDone').click();
+    await page.locator('#editor.active').waitFor();
+  });
+
   await step('outline', async () => {
     await page.locator('[data-tool=outline]').click();
     await page.locator('.switch-row input').check();

@@ -447,6 +447,14 @@ async function doRetouch(toolId) {
   fit(); draw();
   if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
 }
+// Patch: copy a round area onto another spot. Returns a new picture (one undo step).
+async function doPatch() {
+  const L = sel();
+  if (!L || L.type !== 'photo') return;
+  const res = await openBrush('patch', L);
+  fit(); draw();
+  if (res && res.img !== L.img) { L.img = res.img; commit(); draw(); }
+}
 async function doRefine() {
   const L = sel();
   if (!L || L.type !== 'photo') return;
@@ -530,6 +538,7 @@ function buildPanel() {
       ${faceChooser(L)}
       <div class="tools">
         <button class="tool" data-tool="shape">${icon('reshape')}Face Shape</button>
+        <button class="tool" data-tool="patch">${icon('patch')}Patch</button>
         <button class="tool" data-tool="brows">${icon('brow')}Eyebrows</button>
         ${RETOUCH_TOOLS.map(t => `<button class="tool" data-retouch="${t.id}">${icon(t.icon)}${t.name}</button>`).join('')}
       </div>`;
@@ -585,6 +594,7 @@ async function panelAction(act) {
 async function openTool(id) {
   const L = sel();
   if (id === 'refine') return doRefine();
+  if (id === 'patch') return doPatch();
   if (id === 'crop') {
     const r = await openCrop(L);
     fit();

@@ -168,3 +168,27 @@ export function grabWarp(dst, src, g, v, R, box) {
   }
   dc.putImageData(out, x0, y0);
 }
+
+// Patch: copy the round area at s (radius R) from src and paste it at t on dst, with a soft
+// edge (soft 0..1 = how much of the radius fades out). flip mirrors the copy left to right.
+// Returns the box it changed, so it can be put back later.
+export function pastePatch(dst, src, s, t, R, soft, flip) {
+  const size = Math.ceil(R * 2) + 2;
+  const tmp = makeCanvas(size, size);
+  const c = ctx2d(tmp);
+  c.save();
+  c.translate(size / 2, size / 2);
+  if (flip) c.scale(-1, 1);
+  c.drawImage(src, -s.x, -s.y);
+  c.restore();
+  // Soft round edge: fully the copy in the middle, fading to nothing at the circle's edge.
+  const g = c.createRadialGradient(size / 2, size / 2, R * (1 - soft), size / 2, size / 2, R);
+  g.addColorStop(0, 'rgba(0,0,0,1)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.globalCompositeOperation = 'destination-in';
+  c.fillStyle = g;
+  c.fillRect(0, 0, size, size);
+  const x = Math.round(t.x - size / 2), y = Math.round(t.y - size / 2);
+  ctx2d(dst).drawImage(tmp, x, y);
+  return { x, y, w: size, h: size };
+}

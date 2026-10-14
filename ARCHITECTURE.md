@@ -59,6 +59,13 @@ To stay smooth, the editor draws layers at up to 1400 pixels and remembers the l
 
 On every brush screen, two fingers zoom up to 16 times and move around, so small spots like a blemish are easy to brush. Fit zooms back out. Each brush stroke is worked on a copy of the photo. Lifting your finger keeps it, and Undo on the brush screen goes back one stroke. The check mark returns one new picture that replaces the photo, which is one step for the editor's Undo and Redo. It's saved with the project like any photo.
 
+**Patch.** The Patch tool (in the Retouch section) copies one round area of the photo onto another spot, for example a patch of hair moved to the hairline to make a widow's peak. It uses the same full-screen screen as the brushes, so two-finger zoom, Fit, Undo, the X and the check mark work as usual.
+* The screen shows two linked circles. Drag the dashed **Copy from** circle onto what you want to copy and the solid **Paste here** circle to where it should go. Touching anywhere else moves Paste here to that spot.
+* The preview updates as you drag. The copy has a soft round edge, so it blends in.
+* **Patch size** sets the circles' size, **Edge softness** how gently the copy fades in, and **Flip the copy** mirrors it.
+* **Stamp patch** keeps it so you can patch again somewhere else. Undo takes back one stamp, and the check mark keeps everything, including an unstamped patch.
+* The copy always comes from the photo as it was before that patch (`pastePatch` in `retouch.js`). The result replaces the photo as one step for the editor's Undo and Redo.
+
 **Faces.** As soon as a photo opens, `faces.js` looks for faces in the background with MediaPipe Face Landmarker (free, Apache licence). It runs in the browser and marks 478 points on each face: eyebrows, eyes, lips and the face outline.
 * **Finding small faces:** the detector shrinks what it looks at to a small square, so faces in a wide or group photo can become too small to see. So it looks at the whole photo, then at overlapping squares at two sizes, and keeps each person once.
 * **Ids and order:** each face gets an id, and faces are numbered left to right.

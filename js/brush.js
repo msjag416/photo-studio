@@ -1,12 +1,13 @@
 // Full-screen brush tools:
 //  - "refine": paint on the cut-out mask (Erase hides, Restore brings back the original).
 //  - "erase":  paint over an object; when the finger lifts, the AI removes it and fills the gap.
+//  - "patch":  two linked circles; the area under "copy from" is pasted at "paste here".
 //  - "retouch": smooth skin, whiten teeth, eye colour, brighten, makeup, hair colour, reshape.
 //    Each stroke is worked on a copy of the photo ("work"); lifting the finger keeps it.
 // One finger paints. Two fingers zoom and move the picture.
 import { $, $$, makeCanvas, ctx2d, copyCanvas, showError, busy, nextFrame } from './util.js';
 import { removeObjects } from './ai.js';
-import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, grabWarp } from './retouch.js';
+import { RETOUCH_TOOLS, toolById, colorsFor, makeEffect, grabWarp, pastePatch } from './retouch.js';
 import { faceMask } from './faces.js';
 
 let S = null; // state of the open screen
@@ -24,21 +25,28 @@ export function openBrush(kind, layer, toolId, face = null) {
       view: null, pointers: new Map(), stroke: null, cursor: null, busy: false,
     };
     if (kind === 'refine') { S.cut = makeCanvas(img.width, img.height); rebuildCut(0, 0, img.width, img.height); }
-    const titles = { refine: 'Refine edges', erase: 'Remove objects', retouch: 'Retouch' };
-    const hints = { refine: 'Paint to erase or restore. Two fingers to zoom.', erase: 'Mark what you want removed', retouch: 'Brush over the area. Two fingers to zoom.' };
+    const titles = { refine: 'Refine edges', erase: 'Remove objects', retouch: 'Retouch', patch: 'Patch' };
+    const hints = { refine: 'Paint to erase or restore. Two fingers to zoom.', erase: 'Mark what you want removed', retouch: 'Brush over the area. Two fingers to zoom.', patch: 'Drag the dashed circle onto what to copy, and the solid one to where it goes.' };
     $('#brushTitle').textContent = titles[kind];
     $('#brushHint').textContent = hints[kind];
     $('#brushHint').hidden = false;
     $('#brushModes').hidden = kind !== 'refine';
-    $('#retouchTools').hidden = $('#strengthRow').hidden = kind !== 'retouch';
+    $('#retouchTools').hidden = kind !== 'retouch';
+    $('#strengthRow').hidden = kind !== 'retouch' && kind !== 'patch';
+    $('#patchBtns').hidden = kind !== 'patch';
+    $('#strengthLabel').textContent = kind === 'patch' ? 'Edge softness' : 'Strength';
+    $('#sizeLabel').textContent = kind === 'patch' ? 'Patch size' : 'Brush size';
+    $('#brushSize').max = kind === 'patch' ? 320 : 120;
     setMode('erase');
     if (kind === 'retouch') {
       S.orig = img; S.face = face; S.strokeMask = makeCanvas(img.width, img.height); setTool(toolId);
       if (face && layer.faces && layer.faces.length > 1) $('#brushHint').textContent = `Only Face ${layer.faces.indexOf(face) + 1} will change. Two fingers to zoom.`;
     }
     else { $('#retouchOpts').hidden = $('#retouchColors').hidden = true; }
+    if (kind === 'patch') $('#brushStrength').value = 60;
     show(true);
     fit();
+    if (kind === 'patch') startPatch();
     draw();
     // Scroll the tool row so the picked tool can be seen (only works once the screen is showing).
     const on = kind === 'retouch' && $('#retouchTools .chip-btn.on');
@@ -150,8 +158,9 @@ function draw() {
     cx.drawImage(S.img, ox, oy, iw, ih);
     cx.globalAlpha = 1;
     cx.drawImage(S.cut, ox, oy, iw, ih);
-  } else if (S.kind === 'retouch') {
+  } else if (S.kind === 'retouch' || S.kind === 'patch') {
     cx.drawImage(S.work || S.img, ox, oy, iw, ih);
+    if (S.kind === 'patch') drawPatchCircles(cx);
   } else {
     cx.drawImage(S.img, ox, oy, iw, ih);
     cx.globalAlpha = 0.55;
@@ -297,6 +306,97 @@ function strokeTo(p) {
   if (d >= step) S.stroke.last = p;
 }
 
+// ---------- Patch ----------
+// S.src = centre of "copy from", S.dst = centre of "paste here", S.R = radius (picture pixels).
+// S.work shows the photo with the patch pasted; Stamp keeps it and lets you patch again.
+function startPatch() {
+  const W = S.img.width, H = S.img.height;
+  $('#brushSize').value = 140;
+  S.R = Math.max(3, brushPx() / 2 / S.view.scale);
+  S.dst = { x: W * 0.45, y: H * 0.45 };
+  S.src = { x: Math.min(W - S.R, S.dst.x + S.R * 2.4), y: S.dst.y };
+  S.flip = false;
+  $('#patchFlip').classList.remove('on');
+  S.work = copyCanvas(S.img);
+  S.patchBox = null;
+  S.dirty = false; // nothing is pasted until a circle is moved
+}
+const softness = () => 0.15 + 0.8 * strength();
+function renderPatch() {
+  if (!S.work) S.work = copyCanvas(S.img);
+  const wc = ctx2d(S.work);
+  // Put back what the last preview covered, then paste the new one.
+  if (S.patchBox) { const b = S.patchBox; wc.clearRect(b.x, b.y, b.w, b.h); wc.drawImage(S.img, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h); }
+  S.patchBox = pastePatch(S.work, S.img, S.src, S.dst, S.R, softness(), S.flip);
+  S.dirty = true;
+}
+function stampPatch() {
+  if (!S.dirty) return;
+  S.undo.push(S.img);
+  if (S.undo.length > 20) S.undo.shift();
+  S.img = S.work;
+  S.work = copyCanvas(S.img);
+  S.patchBox = null;
+  S.dirty = false;
+  $('#brushHint').textContent = 'Patch stamped. Move the circles to patch again, or tap ✓ to finish.';
+  $('#brushHint').hidden = false;
+}
+function patchDown(e) {
+  if (S.pointers.size === 2) {
+    S.drag = null;
+    const [a, b] = [...S.pointers.values()];
+    S.pinch = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, view: { ...S.view } };
+    return;
+  }
+  if (S.pointers.size > 2) return;
+  const q = toImg(local(e).x, local(e).y);
+  const near = c => Math.hypot(q.x - c.x, q.y - c.y) <= S.R * 1.15;
+  // Grab a circle; touching anywhere else moves the "paste here" circle there.
+  const which = near(S.dst) ? 'dst' : near(S.src) ? 'src' : 'dst';
+  if (!near(S.dst) && !near(S.src)) { S.dst = { x: q.x, y: q.y }; renderPatch(); }
+  S.drag = { which, from: q, start: { ...S[which] } };
+  $('#brushHint').hidden = true;
+}
+function patchMove(p) {
+  const q = toImg(p.x, p.y);
+  const d = S.drag;
+  S[d.which] = {
+    x: Math.min(S.img.width, Math.max(0, d.start.x + q.x - d.from.x)),
+    y: Math.min(S.img.height, Math.max(0, d.start.y + q.y - d.from.y)),
+  };
+  renderPatch();
+}
+function drawPatchCircles(cx) {
+  const { scale, ox, oy } = S.view;
+  const sp = c => ({ x: ox + c.x * scale, y: oy + c.y * scale });
+  const a = sp(S.src), b = sp(S.dst), r = S.R * scale;
+  cx.save();
+  // A line linking the two circles.
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+  if (len > r * 2) {
+    cx.beginPath();
+    cx.moveTo(a.x + (dx / len) * r, a.y + (dy / len) * r);
+    cx.lineTo(b.x - (dx / len) * r, b.y - (dy / len) * r);
+    cx.setLineDash([4, 4]); cx.lineWidth = 1.5; cx.strokeStyle = 'rgba(255,255,255,.8)'; cx.stroke();
+  }
+  for (const [c, dash, label] of [[a, [7, 5], 'Copy from'], [b, [], 'Paste here']]) {
+    cx.setLineDash(dash);
+    cx.beginPath(); cx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    cx.lineWidth = 4; cx.strokeStyle = 'rgba(0,0,0,.4)'; cx.stroke();
+    cx.lineWidth = 2; cx.strokeStyle = '#fff'; cx.stroke();
+    cx.setLineDash([]);
+    cx.font = '600 12px -apple-system, Helvetica, Arial, sans-serif';
+    cx.textAlign = 'center';
+    const ty = label === 'Paste here' ? c.y + r + 16 : c.y - r - 8;
+    const tw = cx.measureText(label).width + 12;
+    cx.fillStyle = 'rgba(0,0,0,.6)';
+    cx.fillRect(c.x - tw / 2, ty - 10, tw, 18);
+    cx.fillStyle = '#fff';
+    cx.fillText(label, c.x, ty + 3);
+  }
+  cx.restore();
+}
+
 function local(e) {
   const r = $('#brushStage').getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -307,6 +407,7 @@ function onDown(e) {
   e.preventDefault();
   $('#brushStage').setPointerCapture(e.pointerId);
   S.pointers.set(e.pointerId, local(e));
+  if (S.kind === 'patch') { patchDown(e); draw(); return; }
   if (S.pointers.size === 1) {
     // Save a copy first so Undo can go back one stroke.
     if (S.kind === 'retouch') startRetouchStroke();
@@ -347,7 +448,9 @@ function onMove(e) {
   e.preventDefault();
   const p = local(e);
   S.pointers.set(e.pointerId, p);
-  if (S.pointers.size === 1 && S.stroke) {
+  if (S.kind === 'patch' && S.pointers.size === 1 && S.drag) {
+    patchMove(p);
+  } else if (S.pointers.size === 1 && S.stroke) {
     S.cursor = p;
     strokeTo(toImg(p.x, p.y));
   } else if (S.pointers.size === 2 && S.pinch) {
@@ -370,6 +473,7 @@ async function onUp(e) {
   if (S.pointers.size === 0) {
     S.pinch = null;
     S.cursor = null;
+    S.drag = null;
     const painted = S.stroke && S.stroke.painted;
     S.stroke = null;
     draw();
@@ -401,6 +505,7 @@ function onUndo() {
   const prev = S.undo.pop();
   if (S.kind === 'refine') { S.mask = prev; rebuildCut(0, 0, S.img.width, S.img.height); }
   else if (S.kind === 'retouch') { S.img = prev; S.effect = null; }
+  else if (S.kind === 'patch') { S.img = prev; S.work = copyCanvas(S.img); S.patchBox = null; S.dirty = false; renderPatch(); }
   else { S.img = prev; ctx2d(S.paint).clearRect(0, 0, S.paint.width, S.paint.height); }
   draw();
 }
@@ -412,17 +517,29 @@ export function initBrush() {
   st.addEventListener('pointerup', onUp);
   st.addEventListener('pointercancel', onUp);
   $('#brushUndo').onclick = onUndo;
+  $('#patchApply').onclick = () => { if (S && S.kind === 'patch') { stampPatch(); draw(); } };
+  $('#patchFlip').onclick = () => {
+    if (!S || S.kind !== 'patch') return;
+    S.flip = !S.flip;
+    $('#patchFlip').classList.toggle('on', S.flip);
+    if (S.dirty) renderPatch();
+    draw();
+  };
+  const patchSizeOrSoft = () => { if (S && S.kind === 'patch') { S.R = Math.max(3, brushPx() / 2 / S.view.scale); if (S.dirty) renderPatch(); draw(); } };
+  $('#brushSize').addEventListener('input', patchSizeOrSoft);
+  $('#brushStrength').addEventListener('input', () => { if (S && S.kind === 'patch' && S.dirty) { renderPatch(); draw(); } });
   $('#brushFit').onclick = () => { if (S) { fit(); draw(); } };
   $('#brushCancel').onclick = () => S && !S.busy && close(null);
   $('#brushDone').onclick = () => {
     if (!S || S.busy) return;
+    if (S.kind === 'patch' && S.dirty) stampPatch();
     close(S.kind === 'refine' ? { mask: S.mask } : { img: S.img });
   };
   $$('#brushModes button').forEach(b => (b.onclick = () => setMode(b.dataset.mode)));
   $('#retouchTools').innerHTML = RETOUCH_TOOLS.map(t => `<button class="chip-btn" data-tool="${t.id}">${t.name}</button>`).join('');
   $$('#retouchTools .chip-btn').forEach(b => (b.onclick = () => S && !S.busy && setTool(b.dataset.tool)));
   $('#brushSize').addEventListener('input', () => {
-    if (!S) return;
+    if (!S || S.kind === 'patch') return;
     const { w, h } = stageSize();
     S.cursor = { x: w / 2, y: h / 2 };
     draw();

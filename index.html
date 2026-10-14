@@ -99,8 +99,9 @@
       <button data-mode="erase" class="on">Erase</button>
       <button data-mode="restore">Restore</button>
     </div>
-    <label class="slider-row">Brush size<input type="range" id="brushSize" min="2" max="120" value="30"></label>
-    <label class="slider-row" id="strengthRow" hidden>Strength<input type="range" id="brushStrength" min="5" max="100" value="40"></label>
+    <label class="slider-row"><span id="sizeLabel">Brush size</span><input type="range" id="brushSize" min="2" max="120" value="30"></label>
+    <label class="slider-row" id="strengthRow" hidden><span id="strengthLabel">Strength</span><input type="range" id="brushStrength" min="5" max="100" value="40"></label>
+    <div class="row-btns" id="patchBtns" hidden><button class="chip-btn" id="patchFlip">Flip the copy</button><button class="chip-btn on" id="patchApply">Stamp patch</button></div>
   </footer>
 </section>
 
