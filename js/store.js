@@ -26,21 +26,24 @@ async function tx(mode, fn) {
 
 const PICS = ['img', 'mask', 'subject'];
 
-// Pictures (canvases) are turned into PNG files before saving.
+// Pictures (canvases) are turned into PNG data before saving. They are stored as raw
+// bytes, not Blobs, because Safari can refuse to store Blobs (for example in private browsing).
+const toBytes = async c => ({ type: 'image/png', data: await (await canvasToBlob(c)).arrayBuffer() });
+const fromBytes = b => new Blob([b.data], { type: b.type });
 export async function saveProject(P, thumb) {
   const layers = [];
   for (const L of P.layers) {
     const copy = { ...L };
-    for (const k of PICS) if (L[k]) copy[k] = await canvasToBlob(L[k]);
+    for (const k of PICS) if (L[k]) copy[k] = await toBytes(L[k]);
     layers.push(copy);
   }
-  const rec = { id: P.id, w: P.w, h: P.h, bg: P.bg, layers, updated: Date.now(), thumb: await canvasToBlob(thumb) };
+  const rec = { id: P.id, w: P.w, h: P.h, bg: P.bg, layers, updated: Date.now(), thumb: await toBytes(thumb) };
   await tx('readwrite', s => s.put(rec));
 }
 
 export async function listProjects() {
   const all = (await tx('readonly', s => s.getAll())) || [];
-  return all.sort((a, b) => b.updated - a.updated).map(r => ({ id: r.id, thumb: r.thumb, updated: r.updated }));
+  return all.sort((a, b) => b.updated - a.updated).map(r => ({ id: r.id, thumb: fromBytes(r.thumb), updated: r.updated }));
 }
 
 export async function loadProject(id) {
@@ -49,7 +52,7 @@ export async function loadProject(id) {
   const layers = [];
   for (const L of r.layers) {
     const copy = { ...L };
-    for (const k of PICS) if (L[k]) copy[k] = await blobToCanvas(L[k]);
+    for (const k of PICS) if (L[k]) copy[k] = await blobToCanvas(fromBytes(L[k]));
     layers.push(copy);
   }
   return { id: r.id, w: r.w, h: r.h, bg: r.bg, layers };

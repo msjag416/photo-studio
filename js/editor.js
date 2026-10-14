@@ -84,6 +84,7 @@ async function leave() {
     }
   } catch (err) {
     console.warn('Could not save project', err);
+    toast('This project could not be kept on this device.');
   }
   busy(false);
   P = null;

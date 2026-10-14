@@ -169,6 +169,16 @@ async function run(engine, devName) {
     await page.locator('.recent-item').first().waitFor({ timeout: 20000 });
   });
 
+  await step('reopen-project', async () => {
+    await page.locator('.recent-item img').first().click();
+    await page.locator('#editor.active').waitFor();
+    await idle();
+    await page.locator('#layersBtn').click();
+    const c = await page.evaluate(() => document.querySelectorAll('#layerList .layer-row').length);
+    await page.locator('#layersSheet [data-close]').click();
+    if (c !== 2) throw new Error('Expected 2 layers in the reopened project, found ' + c);
+  });
+
   if (errors.length) results.push({ tag, name: 'console', ok: false, err: errors.slice(0, 3).join(' | ') });
   await browser.close();
 }
