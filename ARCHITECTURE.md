@@ -68,4 +68,4 @@ Every error shows a box in plain words with a short "Details" line, instead of f
 
 `tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. It takes a screenshot of every step. GitHub runs it automatically on every upload (`.github/workflows/browser-test.yml`) and saves the screenshots to the `test-shots` branch.
 
-To run it yourself: start a local web server in this folder (for example `npx http-server -p 8080`), then run `node tests/e2e.mjs http://localhost:8080/ test-shots chromium,webkit`.
+The test uses `tests/server.mjs`, a small web server that compresses files the same way GitHub Pages does. (An early version broke on GitHub Pages because of that compression, so the test now checks for it.) To run it yourself: start the server with `node tests/server.mjs . 8080`, then run `node tests/e2e.mjs http://localhost:8080/ test-shots chromium,webkit`.
