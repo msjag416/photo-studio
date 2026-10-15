@@ -1,0 +1,184 @@
+PASS  webkit-ipad        home                 156 ms
+PASS  webkit-ipad        open-photo           591 ms
+PASS  webkit-ipad        remove-background    2903 ms
+PASS  webkit-ipad        refine-edges         3495 ms
+PASS  webkit-ipad        remove-object        5969 ms
+PASS  webkit-ipad          smoothing colour shift 0.1 / 0.6 0 ms
+PASS  webkit-ipad        smooth-keeps-colour  393 ms
+PASS  webkit-ipad        retouch-open         1073 ms
+PASS  webkit-ipad        retouch-smooth       2314 ms
+PASS  webkit-ipad        retouch-whiten       1481 ms
+PASS  webkit-ipad        retouch-eyes         1845 ms
+PASS  webkit-ipad        retouch-brighten     1816 ms
+PASS  webkit-ipad        retouch-lips         2288 ms
+PASS  webkit-ipad        retouch-blush        1995 ms
+PASS  webkit-ipad        retouch-hair         2440 ms
+PASS  webkit-ipad        retouch-move         1558 ms
+PASS  webkit-ipad        retouch-restore      1542 ms
+PASS  webkit-ipad          reshape moved 38.0 px for a 40 px drag, other side 0.0 px 0 ms
+PASS  webkit-ipad        reshape-follows-finger 798 ms
+PASS  webkit-ipad        retouch-undo-apply   1261 ms
+PASS  webkit-ipad          removal reached 16.1 px for a 12 px dot 0 ms
+PASS  webkit-ipad        remove-precision     1552 ms
+PASS  webkit-ipad          shape: slim -9.9%, mouthWider 6.5%, mouthNarrower -6.1%, lipsFuller 11.0%, noseWider 5.0%, cheeksFuller 8.2%, smileLift -39.9% 0 ms
+PASS  webkit-ipad        face-shape-measured  1166 ms
+PASS  webkit-ipad        patch-copy-paste     3162 ms
+PASS  webkit-ipad        outline              940 ms
+PASS  webkit-ipad        shadow               926 ms
+PASS  webkit-ipad        adjust-filter        583 ms
+PASS  webkit-ipad        text                 1032 ms
+PASS  webkit-ipad        undo                 1472 ms
+PASS  webkit-ipad        save-png             660 ms
+PASS  webkit-ipad        save-jpg             561 ms
+PASS  webkit-ipad        back-home-recent     431 ms
+PASS  webkit-ipad        reopen-project       667 ms
+PASS  webkit-ipad        faces-two-found      870 ms
+PASS  webkit-ipad        faces-tap-to-select  856 ms
+PASS  webkit-ipad        faces-retouch-only-selected 1701 ms
+PASS  webkit-ipad        brows-auto-fix       1077 ms
+PASS  webkit-ipad        brows-style-and-sliders 1393 ms
+PASS  webkit-ipad        brows-before-after   1083 ms
+PASS  webkit-ipad        brows-undo-redo-reset 1364 ms
+PASS  webkit-ipad        face-shape-panel     2247 ms
+PASS  webkit-ipad          face1 changed 11.2, face2 0.00 0 ms
+PASS  webkit-ipad        faces-save-other-face-untouched 818 ms
+PASS  webkit-ipad        faces-three-found    878 ms
+PASS  webkit-iphone      home                 147 ms
+PASS  webkit-iphone      open-photo           588 ms
+PASS  webkit-iphone      remove-background    2678 ms
+PASS  webkit-iphone      refine-edges         3035 ms
+PASS  webkit-iphone      remove-object        3689 ms
+PASS  webkit-iphone        smoothing colour shift 0.1 / 0.6 0 ms
+PASS  webkit-iphone      smooth-keeps-colour  389 ms
+PASS  webkit-iphone      retouch-open         613 ms
+PASS  webkit-iphone      retouch-smooth       1013 ms
+PASS  webkit-iphone      retouch-whiten       751 ms
+PASS  webkit-iphone      retouch-eyes         865 ms
+PASS  webkit-iphone      retouch-brighten     812 ms
+PASS  webkit-iphone      retouch-lips         1005 ms
+PASS  webkit-iphone      retouch-blush        938 ms
+PASS  webkit-iphone      retouch-hair         1000 ms
+PASS  webkit-iphone      retouch-move         777 ms
+PASS  webkit-iphone      retouch-restore      757 ms
+PASS  webkit-iphone        reshape moved 38.0 px for a 40 px drag, other side 0.0 px 0 ms
+PASS  webkit-iphone      reshape-follows-finger 404 ms
+PASS  webkit-iphone      retouch-undo-apply   1013 ms
+PASS  webkit-iphone        removal reached 16.1 px for a 12 px dot 0 ms
+PASS  webkit-iphone      remove-precision     1490 ms
+PASS  webkit-iphone        shape: slim -9.9%, mouthWider 6.5%, mouthNarrower -6.1%, lipsFuller 11.0%, noseWider 5.0%, cheeksFuller 8.2%, smileLift -39.9% 0 ms
+PASS  webkit-iphone      face-shape-measured  1170 ms
+PASS  webkit-iphone      patch-copy-paste     1958 ms
+PASS  webkit-iphone      outline              796 ms
+PASS  webkit-iphone      shadow               704 ms
+PASS  webkit-iphone      adjust-filter        437 ms
+PASS  webkit-iphone      text                 725 ms
+PASS  webkit-iphone      undo                 1181 ms
+PASS  webkit-iphone      save-png             487 ms
+PASS  webkit-iphone      save-jpg             441 ms
+PASS  webkit-iphone      back-home-recent     302 ms
+PASS  webkit-iphone      reopen-project       484 ms
+PASS  webkit-iphone      faces-two-found      717 ms
+PASS  webkit-iphone      faces-tap-to-select  821 ms
+PASS  webkit-iphone      faces-retouch-only-selected 916 ms
+PASS  webkit-iphone      brows-auto-fix       1081 ms
+PASS  webkit-iphone      brows-style-and-sliders 1357 ms
+PASS  webkit-iphone      brows-before-after   1004 ms
+PASS  webkit-iphone      brows-undo-redo-reset 1459 ms
+PASS  webkit-iphone      face-shape-panel     2275 ms
+PASS  webkit-iphone        face1 changed 11.2, face2 0.00 0 ms
+PASS  webkit-iphone      faces-save-other-face-untouched 813 ms
+PASS  webkit-iphone      faces-three-found    864 ms
+PASS  chromium-ipad      home                 93 ms
+PASS  chromium-ipad      open-photo           391 ms
+PASS  chromium-ipad      pinch-zoom-editor    2136 ms
+PASS  chromium-ipad      pinch-zoom-remove-blemish 6367 ms
+PASS  chromium-ipad      remove-background    1537 ms
+PASS  chromium-ipad      refine-edges         3132 ms
+PASS  chromium-ipad      remove-object        5284 ms
+PASS  chromium-ipad        smoothing colour shift 0.1 / 0.6 0 ms
+PASS  chromium-ipad      smooth-keeps-colour  345 ms
+PASS  chromium-ipad      retouch-open         839 ms
+PASS  chromium-ipad      retouch-smooth       2027 ms
+PASS  chromium-ipad      retouch-whiten       1209 ms
+PASS  chromium-ipad      retouch-eyes         1593 ms
+PASS  chromium-ipad      retouch-brighten     1551 ms
+PASS  chromium-ipad      retouch-lips         2029 ms
+PASS  chromium-ipad      retouch-blush        1635 ms
+PASS  chromium-ipad      retouch-hair         2458 ms
+PASS  chromium-ipad      retouch-move         1282 ms
+PASS  chromium-ipad      retouch-restore      1291 ms
+PASS  chromium-ipad        reshape moved 38.0 px for a 40 px drag, other side 0.0 px 0 ms
+PASS  chromium-ipad      reshape-follows-finger 614 ms
+PASS  chromium-ipad      retouch-undo-apply   921 ms
+PASS  chromium-ipad        removal reached 16.1 px for a 12 px dot 0 ms
+PASS  chromium-ipad      remove-precision     1401 ms
+PASS  chromium-ipad        shape: slim -9.9%, mouthWider 6.5%, mouthNarrower -6.1%, lipsFuller 11.0%, noseWider 5.0%, cheeksFuller 8.2%, smileLift -39.9% 0 ms
+PASS  chromium-ipad      face-shape-measured  982 ms
+PASS  chromium-ipad      patch-copy-paste     2864 ms
+PASS  chromium-ipad      outline              744 ms
+PASS  chromium-ipad      shadow               692 ms
+PASS  chromium-ipad      adjust-filter        446 ms
+PASS  chromium-ipad      text                 656 ms
+PASS  chromium-ipad      undo                 1018 ms
+PASS  chromium-ipad      save-png             512 ms
+PASS  chromium-ipad      save-jpg             274 ms
+PASS  chromium-ipad      back-home-recent     287 ms
+PASS  chromium-ipad      reopen-project       463 ms
+PASS  chromium-ipad      faces-two-found      644 ms
+PASS  chromium-ipad      faces-tap-to-select  773 ms
+PASS  chromium-ipad      faces-retouch-only-selected 1264 ms
+PASS  chromium-ipad      brows-auto-fix       1131 ms
+PASS  chromium-ipad      brows-style-and-sliders 1410 ms
+PASS  chromium-ipad      brows-before-after   1031 ms
+PASS  chromium-ipad      brows-undo-redo-reset 1393 ms
+PASS  chromium-ipad      face-shape-panel     2252 ms
+PASS  chromium-ipad        face1 changed 11.2, face2 0.00 0 ms
+PASS  chromium-ipad      faces-save-other-face-untouched 477 ms
+PASS  chromium-ipad      faces-three-found    673 ms
+PASS  chromium-iphone    home                 90 ms
+PASS  chromium-iphone    open-photo           396 ms
+PASS  chromium-iphone    pinch-zoom-editor    1746 ms
+PASS  chromium-iphone    pinch-zoom-remove-blemish 5363 ms
+PASS  chromium-iphone    remove-background    1546 ms
+PASS  chromium-iphone    refine-edges         3001 ms
+PASS  chromium-iphone    remove-object        3906 ms
+PASS  chromium-iphone      smoothing colour shift 0.1 / 0.6 0 ms
+PASS  chromium-iphone    smooth-keeps-colour  349 ms
+PASS  chromium-iphone    retouch-open         569 ms
+PASS  chromium-iphone    retouch-smooth       1243 ms
+PASS  chromium-iphone    retouch-whiten       755 ms
+PASS  chromium-iphone    retouch-eyes         986 ms
+PASS  chromium-iphone    retouch-brighten     924 ms
+PASS  chromium-iphone    retouch-lips         1205 ms
+PASS  chromium-iphone    retouch-blush        1017 ms
+PASS  chromium-iphone    retouch-hair         1322 ms
+PASS  chromium-iphone    retouch-move         782 ms
+PASS  chromium-iphone    retouch-restore      766 ms
+PASS  chromium-iphone      reshape moved 38.0 px for a 40 px drag, other side 0.0 px 0 ms
+PASS  chromium-iphone    reshape-follows-finger 326 ms
+PASS  chromium-iphone    retouch-undo-apply   916 ms
+PASS  chromium-iphone      removal reached 16.1 px for a 12 px dot 0 ms
+PASS  chromium-iphone    remove-precision     1433 ms
+PASS  chromium-iphone      shape: slim -9.9%, mouthWider 6.5%, mouthNarrower -6.1%, lipsFuller 11.0%, noseWider 5.0%, cheeksFuller 8.2%, smileLift -39.9% 0 ms
+PASS  chromium-iphone    face-shape-measured  950 ms
+PASS  chromium-iphone    patch-copy-paste     2006 ms
+PASS  chromium-iphone    outline              763 ms
+PASS  chromium-iphone    shadow               704 ms
+PASS  chromium-iphone    adjust-filter        406 ms
+PASS  chromium-iphone    text                 659 ms
+PASS  chromium-iphone    undo                 1067 ms
+PASS  chromium-iphone    save-png             365 ms
+PASS  chromium-iphone    save-jpg             300 ms
+PASS  chromium-iphone    back-home-recent     316 ms
+PASS  chromium-iphone    reopen-project       481 ms
+PASS  chromium-iphone    faces-two-found      688 ms
+PASS  chromium-iphone    faces-tap-to-select  866 ms
+PASS  chromium-iphone    faces-retouch-only-selected 1126 ms
+PASS  chromium-iphone    brows-auto-fix       1046 ms
+PASS  chromium-iphone    brows-style-and-sliders 1364 ms
+PASS  chromium-iphone    brows-before-after   951 ms
+PASS  chromium-iphone    brows-undo-redo-reset 1449 ms
+PASS  chromium-iphone    face-shape-panel     2239 ms
+PASS  chromium-iphone      face1 changed 11.2, face2 0.00 0 ms
+PASS  chromium-iphone    faces-save-other-face-untouched 483 ms
+PASS  chromium-iphone    faces-three-found    556 ms
