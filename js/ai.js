@@ -171,19 +171,25 @@ export async function removeObjects(img, paint) {
   const ort = sess._ort;
   busy('Removing the object…');
 
-  // The whole photo goes to the model: it finds the hole and zooms in on it by itself.
-  // (Tests showed this fills much more cleanly than cropping around the object first.)
-  // Very large photos are shrunk to save memory on phones and tablets.
-  const k = Math.min(1, 2048 / Math.max(W, H));
-  const w = Math.round(W * k), h = Math.round(H * k);
+  // Work on a close-up around the painted area, at full sharpness. (The AI works at about
+  // 512 x 512 pixels; sending the whole photo made it fill a tiny, low-detail copy of the
+  // spot, which looked smudged once stretched back up.) The close-up is about 3 times the
+  // size of the painted area, at least 384 pixels, so the AI sees enough surroundings.
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  const side = Math.min(Math.max(W, H), Math.max(384, Math.round(Math.max(bw, bh) * 3 + 48)));
+  const cw = Math.min(W, side), ch = Math.min(H, side);
+  const cx0 = Math.max(0, Math.min(W - cw, Math.round((x0 + x1) / 2 - cw / 2)));
+  const cy0 = Math.max(0, Math.min(H - ch, Math.round((y0 + y1) / 2 - ch / 2)));
+  const k = Math.min(1, 1024 / Math.max(cw, ch)); // very big areas are shrunk to save memory
+  const w = Math.max(8, Math.round(cw * k)), h = Math.max(8, Math.round(ch * k));
 
   const small = makeCanvas(w, h);
   const cc = ctx2d(small);
   cc.imageSmoothingQuality = 'high';
-  cc.drawImage(img, 0, 0, w, h);
+  cc.drawImage(img, cx0, cy0, cw, ch, 0, 0, w, h);
   const mcan = makeCanvas(w, h);
   const mctx = ctx2d(mcan);
-  mctx.drawImage(paint, 0, 0, w, h);
+  mctx.drawImage(paint, cx0, cy0, cw, ch, 0, 0, w, h);
   const ip = cc.getImageData(0, 0, w, h).data;
   const mp = mctx.getImageData(0, 0, w, h).data;
   const n = w * h;
@@ -193,6 +199,7 @@ export async function removeObjects(img, paint) {
   let hole = new Uint8Array(n);
   for (let p = 0; p < n; p++) hole[p] = mp[p * 4 + 3] > 8 ? 1 : 0;
   hole = shrink(grow(hole, w, h, 5), w, h, 3);
+  hole = grow(hole, w, h, 1);
 
   const imageT = new Uint8Array(3 * n);
   const maskT = new Uint8Array(n);
@@ -207,14 +214,17 @@ export async function removeObjects(img, paint) {
     mask: new ort.Tensor('uint8', maskT, [1, 1, h, w]),
   });
   const res = out[sess.outputNames[0]].data;
+  const fill = new Float32Array(n * 3);
+  for (let p = 0; p < n; p++) { fill[p * 3] = res[p]; fill[p * 3 + 1] = res[n + p]; fill[p * 3 + 2] = res[2 * n + p]; }
+  matchSurroundings(fill, ip, hole, w, h);
 
   // Only the hole (with soft edges) is taken from the model; everything else stays untouched.
   const soft = softEdge(grow(hole, w, h, 1), w, h, 1);
   const patch = cc.createImageData(w, h);
   for (let p = 0; p < n; p++) {
-    patch.data[p * 4] = res[p];
-    patch.data[p * 4 + 1] = res[n + p];
-    patch.data[p * 4 + 2] = res[2 * n + p];
+    patch.data[p * 4] = fill[p * 3];
+    patch.data[p * 4 + 1] = fill[p * 3 + 1];
+    patch.data[p * 4 + 2] = fill[p * 3 + 2];
     patch.data[p * 4 + 3] = Math.round(soft[p] * 255);
   }
   const pc = makeCanvas(w, h);
@@ -224,8 +234,79 @@ export async function removeObjects(img, paint) {
   const rc = ctx2d(result);
   rc.drawImage(img, 0, 0);
   rc.imageSmoothingQuality = 'high';
-  rc.drawImage(pc, 0, 0, W, H);
+  rc.drawImage(pc, 0, 0, w, h, cx0, cy0, cw, ch);
   return result;
+}
+
+// Make the fill blend in: (1) shift its colour so it meets the photo exactly at the hole's
+// edge, with the correction fading smoothly toward the middle; (2) give it the same fine grain
+// (skin texture) as the area around it, so it doesn't look smooth and smudged.
+function matchSurroundings(fill, ip, hole, w, h) {
+  const n = w * h;
+  const ring = grow(hole, w, h, 3);
+  // Colour difference along the edge, spread smoothly across the hole.
+  const diff = new Float32Array(n * 3), wt = new Float32Array(n);
+  for (let p = 0; p < n; p++) {
+    if (ring[p] && !hole[p]) {
+      wt[p] = 1;
+      for (let k = 0; k < 3; k++) diff[p * 3 + k] = ip[p * 4 + k] - fill[p * 3 + k];
+    }
+  }
+  const spread = spreadFill(diff, wt, w, h);
+  // Fine grain of the surroundings: how much each pixel differs from its close neighbours.
+  const lum = i => 0.299 * ip[i * 4] + 0.587 * ip[i * 4 + 1] + 0.114 * ip[i * 4 + 2];
+  const near = grow(hole, w, h, Math.max(6, Math.round(Math.sqrt(hole.reduce((a, v) => a + v, 0)) * 0.6)));
+  let sum = 0, cnt = 0;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!near[i] || hole[i] || hole[i - 1] || hole[i + 1] || hole[i - w] || hole[i + w]) continue;
+    const g = lum(i) - (lum(i - 1) + lum(i + 1) + lum(i - w) + lum(i + w)) / 4;
+    sum += g * g; cnt++;
+  }
+  const grain = Math.min(14, Math.sqrt(sum / Math.max(1, cnt)));
+  let fsum = 0, fcnt = 0; // grain the model's fill already has
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!hole[i]) continue;
+    const L = j => 0.299 * fill[j * 3] + 0.587 * fill[j * 3 + 1] + 0.114 * fill[j * 3 + 2];
+    const g = L(i) - (L(i - 1) + L(i + 1) + L(i - w) + L(i + w)) / 4;
+    fsum += g * g; fcnt++;
+  }
+  const add = Math.sqrt(Math.max(0, grain * grain - fsum / Math.max(1, fcnt))) * 0.9;
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let p = 0; p < n; p++) {
+    if (!hole[p]) continue;
+    const g = (rnd() + rnd() + rnd() - 1.5) * add * 1.4;
+    for (let k = 0; k < 3; k++) fill[p * 3 + k] = Math.min(255, Math.max(0, fill[p * 3 + k] + spread[p * 3 + k] + g));
+  }
+}
+
+// Fill the unknown values (weight 0) smoothly from the known ones ("push-pull": average at
+// smaller and smaller sizes, then fill the gaps back in from those averages).
+function spreadFill(val, wgt, W, H) {
+  if (W <= 1 && H <= 1) return val;
+  const w2 = Math.max(1, Math.ceil(W / 2)), h2 = Math.max(1, Math.ceil(H / 2));
+  const c = new Float32Array(w2 * h2 * 3), cw = new Float32Array(w2 * h2);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, j = (y >> 1) * w2 + (x >> 1), q = wgt[i];
+    if (!q) continue;
+    cw[j] += q; for (let k = 0; k < 3; k++) c[j * 3 + k] += val[i * 3 + k] * q;
+  }
+  for (let j = 0; j < w2 * h2; j++) if (cw[j] > 0) { for (let k = 0; k < 3; k++) c[j * 3 + k] /= cw[j]; cw[j] = Math.min(1, cw[j]); }
+  const coarse = (W === w2 && H === h2) ? c : spreadFill(c, cw, w2, h2);
+  const out = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, q = wgt[i];
+    const fx = Math.min(w2 - 1, Math.max(0, (x - 0.5) / 2)), fy = Math.min(h2 - 1, Math.max(0, (y - 0.5) / 2));
+    const xa = Math.floor(fx), ya = Math.floor(fy), xb = Math.min(w2 - 1, xa + 1), yb = Math.min(h2 - 1, ya + 1), ax = fx - xa, ay = fy - ya;
+    for (let k = 0; k < 3; k++) {
+      const v = (coarse[(ya * w2 + xa) * 3 + k] * (1 - ax) + coarse[(ya * w2 + xb) * 3 + k] * ax) * (1 - ay)
+        + (coarse[(yb * w2 + xa) * 3 + k] * (1 - ax) + coarse[(yb * w2 + xb) * 3 + k] * ax) * ay;
+      out[i * 3 + k] = val[i * 3 + k] * q + v * (1 - q);
+    }
+  }
+  return out;
 }
 
 // Grow a 0/1 mask outward by r pixels, in a round shape (using the exact distance to the mask).
