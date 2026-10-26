@@ -483,7 +483,7 @@ function onMove(e) {
   }
   if (!S.pointers.has(e.pointerId)) {
     // A mouse or pen hovering (not pressed): show the brush circle so its size is clear.
-    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && S.kind !== 'patch') { S.cursor = local(e); draw(); }
+    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && S.kind !== 'patch') { S.cursor = e.target === $('#brushView') ? local(e) : null; draw(); }
     return;
   }
   e.preventDefault();
