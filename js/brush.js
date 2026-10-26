@@ -568,7 +568,7 @@ export function initBrush() {
   }));
   // Keyboard: + and - zoom, 0 fits, holding Space lets you drag the photo around.
   window.addEventListener('keydown', e => {
-    if (!S || /input|textarea/i.test(e.target.tagName)) return;
+    if (!S || isTyping(e.target)) return;
     const { w, h } = stageSize();
     if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
     else if (e.key === '+' || e.key === '=') zoomAt(1.5, w / 2, h / 2);
@@ -607,4 +607,11 @@ export function initBrush() {
     S.cursorTimer = setTimeout(() => { if (S) { S.cursor = null; draw(); } }, 700);
   });
   window.addEventListener('resize', () => { if (S) { fit(); draw(); } });
+}
+
+// True only while typing text (a slider having the focus must not block the zoom keys).
+function isTyping(el) {
+  if (!el || !el.tagName) return false;
+  if (/textarea|select/i.test(el.tagName) || el.isContentEditable) return true;
+  return /input/i.test(el.tagName) && !/range|checkbox|radio|button/i.test(el.type);
 }

@@ -203,6 +203,8 @@ async function run(engine, devName) {
     await page.waitForTimeout(150);
     const moved = await viewInfo();
     if (diff(zoomed, moved) < 1) throw new Error('Right-button drag did not move the picture');
+    const zb = await page.locator('#brushZoom [data-zoom=in]').boundingBox();
+    if (!zb || zb.width < 44 || zb.height < 44) throw new Error('Zoom buttons are too small or not styled (' + JSON.stringify(zb) + ')');
     await page.locator('#brushZoom [data-zoom=in]').click();
     await page.locator('#brushZoom [data-zoom=out]').click();
     await shot('mouse-zoomed');

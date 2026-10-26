@@ -1092,7 +1092,7 @@ export function initEditor() {
     zoomView(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, r.width / 2, r.height / 2);
   }));
   window.addEventListener('keydown', e => {
-    if (!P || !$('#editor').classList.contains('active') || /input|textarea/i.test(e.target.tagName)) return;
+    if (!P || !$('#editor').classList.contains('active') || isTyping(e.target)) return;
     const r = stageRect();
     if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
     else if (e.key === '+' || e.key === '=') zoomView(1.5, r.width / 2, r.height / 2);
@@ -1108,4 +1108,11 @@ export function initEditor() {
   }));
   window.addEventListener('resize', () => { if (P) { fit(); draw(); } });
   fillIcons();
+}
+
+// True only while typing text (a slider having the focus must not block the zoom keys).
+function isTyping(el) {
+  if (!el || !el.tagName) return false;
+  if (/textarea|select/i.test(el.tagName) || el.isContentEditable) return true;
+  return /input/i.test(el.tagName) && !/range|checkbox|radio|button/i.test(el.type);
 }
