@@ -113,6 +113,8 @@ async function runSafe(key, sess, feeds) {
 // ---------------- Background removal (U2-Net-p, 320 x 320) ----------------
 // Returns a mask canvas the same size as the photo: see-through where the background was.
 export async function removeBackground(src) {
+  const plain = plainBackgroundMask(src);
+  if (plain) return plain;
   const sess = await getSession('bg');
   const ort = sess._ort;
   busy('Removing the background…');
@@ -148,6 +150,53 @@ export async function removeBackground(src) {
   const mc = ctx2d(mask);
   mc.imageSmoothingQuality = 'high';
   mc.drawImage(small, 0, 0, mask.width, mask.height);
+  return mask;
+}
+
+// Logos and graphics usually sit on one plain colour. The AI above works on a tiny 320 x 320
+// copy and is made for photos, so on those it gives blurry, smudged edges. Instead, if the
+// picture's border is almost all one colour, that colour is cleared starting from the border
+// (like a paint-bucket fill), at full sharpness. Areas of that colour enclosed by the subject,
+// like the white inside a logo, are kept. Returns null for normal photos.
+function plainBackgroundMask(src) {
+  const k = Math.min(1, 2048 / Math.max(src.width, src.height));
+  const W = Math.max(1, Math.round(src.width * k)), H = Math.max(1, Math.round(src.height * k));
+  const c = makeCanvas(W, H), cx = ctx2d(c);
+  cx.drawImage(src, 0, 0, W, H);
+  const px = cx.getImageData(0, 0, W, H).data;
+  const border = [];
+  for (let x = 0; x < W; x++) border.push(x, (H - 1) * W + x);
+  for (let y = 1; y < H - 1; y++) border.push(y * W, y * W + W - 1);
+  // Background colour = the middle value of the border pixels.
+  const bg = [0, 1, 2].map(ch => border.map(p => px[p * 4 + ch]).sort((a, b) => a - b)[border.length >> 1]);
+  const dist = p => Math.max(Math.abs(px[p * 4] - bg[0]), Math.abs(px[p * 4 + 1] - bg[1]), Math.abs(px[p * 4 + 2] - bg[2]));
+  const T = 40;
+  if (border.filter(p => px[p * 4 + 3] > 200 && dist(p) < T).length < border.length * 0.9) return null;
+  const isBg = new Uint8Array(W * H), queue = new Int32Array(W * H);
+  let qn = 0;
+  for (const p of border) if (!isBg[p] && dist(p) < T) { isBg[p] = 1; queue[qn++] = p; }
+  for (let qi = 0; qi < qn; qi++) {
+    const p = queue[qi], x = p % W;
+    for (const q of [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, p - W, p + W]) {
+      if (q < 0 || q >= W * H || isBg[q] || dist(q) >= T) continue;
+      isBg[q] = 1; queue[qn++] = q;
+    }
+  }
+  if (qn > W * H * 0.98) return null; // nothing left: let the AI decide
+  const m = cx.createImageData(W, H);
+  for (let p = 0; p < W * H; p++) {
+    m.data[p * 4] = m.data[p * 4 + 1] = m.data[p * 4 + 2] = 255;
+    if (isBg[p]) continue;
+    const x = p % W;
+    const edge = (x > 0 && isBg[p - 1]) || (x < W - 1 && isBg[p + 1]) || (p >= W && isBg[p - W]) || (p < W * H - W && isBg[p + W]);
+    // Pixels on the edge are part background colour (smoothed edges), so they're partly see-through.
+    m.data[p * 4 + 3] = edge ? Math.round(255 * Math.min(1, Math.max(0.25, (dist(p) - T / 2) / 60))) : 255;
+  }
+  cx.putImageData(m, 0, 0);
+  if (k === 1) return c;
+  const mask = makeCanvas(src.width, src.height), mc = ctx2d(mask);
+  mc.imageSmoothingQuality = 'high';
+  mc.drawImage(c, 0, 0, mask.width, mask.height);
   return mask;
 }
 
