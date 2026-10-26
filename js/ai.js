@@ -3,6 +3,7 @@
 // Backup engine: WebGL (graphics chip), only used if the CPU engine fails to start.
 import { makeCanvas, ctx2d, busy } from './util.js';
 import { edt } from './render.js';
+import { healHole } from './heal.js';
 
 const BASE = new URL('../', import.meta.url).href;
 const MODELS = {
@@ -216,6 +217,11 @@ export async function removeObjects(img, paint) {
   const res = out[sess.outputNames[0]].data;
   const fill = new Float32Array(n * 3);
   for (let p = 0; p < n; p++) { fill[p * 3] = res[p]; fill[p * 3 + 1] = res[n + p]; fill[p * 3 + 2] = res[2 * n + p]; }
+  // Rebuild the AI's guess from real texture nearby, so it stays sharp instead of smeared.
+  const rgb = new Float32Array(n * 3);
+  for (let p = 0; p < n; p++) for (let k = 0; k < 3; k++) rgb[p * 3 + k] = hole[p] ? fill[p * 3 + k] : ip[p * 4 + k];
+  const healed = healHole(rgb, hole, w, h);
+  for (let p = 0; p < n; p++) if (hole[p]) for (let k = 0; k < 3; k++) fill[p * 3 + k] = healed[p * 3 + k];
   matchSurroundings(fill, ip, hole, w, h);
 
   // Only the hole (with soft edges) is taken from the model; everything else stays untouched.
@@ -243,14 +249,23 @@ export async function removeObjects(img, paint) {
 // (skin texture) as the area around it, so it doesn't look smooth and smudged.
 function matchSurroundings(fill, ip, hole, w, h) {
   const n = w * h;
-  const ring = grow(hole, w, h, 3);
-  // Colour difference along the edge, spread smoothly across the hole.
+  // Colour difference along the hole's border (fill vs. the photo right next to it),
+  // spread smoothly across the hole.
   const diff = new Float32Array(n * 3), wt = new Float32Array(n);
-  for (let p = 0; p < n; p++) {
-    if (ring[p] && !hole[p]) {
-      wt[p] = 1;
-      for (let k = 0; k < 3; k++) diff[p * 3 + k] = ip[p * 4 + k] - fill[p * 3 + k];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = y * w + x;
+    if (!hole[p]) continue;
+    let c = 0, r = 0, g = 0, b = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy, q = yy * w + xx;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h || hole[q]) continue;
+      r += ip[q * 4]; g += ip[q * 4 + 1]; b += ip[q * 4 + 2]; c++;
     }
+    if (!c) continue;
+    const dr = r / c - fill[p * 3], dg = g / c - fill[p * 3 + 1], db = b / c - fill[p * 3 + 2];
+    if (Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db)) > 40) continue; // a hard edge, not a colour drift
+    wt[p] = 1;
+    diff[p * 3] = dr; diff[p * 3 + 1] = dg; diff[p * 3 + 2] = db;
   }
   const spread = spreadFill(diff, wt, w, h);
   // Fine grain of the surroundings: how much each pixel differs from its close neighbours.

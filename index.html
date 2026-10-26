@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#FAF7F2">
 <title>Photo Studio</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="css/app.css?v=202610260200">
+<link rel="stylesheet" href="css/app.css?v=202610261500">
 </head>
 <body>
 
@@ -70,7 +70,7 @@
     <div class="stage" id="stage">
       <canvas id="view"></canvas>
       <button class="float-btn" id="refineBtn" hidden><i data-icon="brush"></i>Refine edges</button>
-      <div class="zoom-btns" id="editorZoom"><button class="zoom-btn" data-zoom="out" aria-label="Zoom out">−</button><button class="zoom-btn" data-zoom="in" aria-label="Zoom in">+</button><button class="zoom-btn fit" id="fitBtn" hidden>Fit</button></div>
+      <div class="zoom-btns" id="editorZoom"><button class="zoom-btn move" data-zoom="move" aria-label="Move the picture" title="Move: drag to move the picture">✋</button><button class="zoom-btn" data-zoom="out" aria-label="Zoom out">−</button><button class="zoom-btn" data-zoom="in" aria-label="Zoom in">+</button><button class="zoom-btn fit" id="fitBtn" hidden>Fit</button></div>
       <div class="pick-hint" id="pickHint" hidden>Tap the photo to pick a colour</div>
     </div>
     <aside class="panel" id="panel"></aside>
@@ -88,7 +88,7 @@
   </header>
   <div class="brush-stage" id="brushStage">
     <canvas id="brushView"></canvas>
-    <div class="zoom-btns" id="brushZoom"><button class="zoom-btn" data-zoom="out" aria-label="Zoom out">−</button><button class="zoom-btn" data-zoom="in" aria-label="Zoom in">+</button><button class="zoom-btn fit" id="brushFit" hidden>Fit</button></div>
+    <div class="zoom-btns" id="brushZoom"><button class="zoom-btn move" data-zoom="move" aria-label="Move the picture" title="Move: drag to move the picture">✋</button><button class="zoom-btn" data-zoom="out" aria-label="Zoom out">−</button><button class="zoom-btn" data-zoom="in" aria-label="Zoom in">+</button><button class="zoom-btn fit" id="brushFit" hidden>Fit</button></div>
     <div class="hint" id="brushHint"></div>
   </div>
   <footer class="brush-tools">
@@ -170,6 +170,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="js/main.js?v=202610260200"></script>
+<script type="module" src="js/main.js?v=202610261500"></script>
 </body>
 </html>

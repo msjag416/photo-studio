@@ -397,6 +397,15 @@ function local(e) {
 
 // ---------- Mouse and trackpad zoom (for computers without touch) ----------
 let spaceDown = false;
+let moveMode = false; // the hand button: dragging moves the picture instead of painting
+function setMoveMode(on) {
+  moveMode = on;
+  $$('.zoom-btn.move').forEach(b => b.classList.toggle('on', on));
+  $('#brushStage').classList.toggle('move-mode', on);
+  $('#stage').classList.toggle('move-mode', on);
+}
+export function isMoveMode() { return moveMode; }
+export { setMoveMode };
 function zoomAt(factor, cx, cy) {
   if (!S || !S.view) return;
   const v0 = S.view;
@@ -412,9 +421,10 @@ function onWheel(e) {
   e.preventDefault();
   const p = local(e);
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-  // Trackpad pinch arrives as a wheel with the Ctrl key; a mouse wheel zooms too.
-  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) {
-    S.view = { ...S.view, ox: S.view.ox - e.deltaX * unit };
+  // Mouse wheel: zoom in or out around the pointer. Trackpad pinch (arrives with Ctrl): zoom.
+  // Trackpad two-finger scroll: move the picture.
+  if (!e.ctrlKey && !isMouseWheel(e)) {
+    S.view = { ...S.view, ox: S.view.ox - e.deltaX * unit, oy: S.view.oy - e.deltaY * unit };
     $('#brushFit').hidden = false;
     draw();
     return;
@@ -424,7 +434,7 @@ function onWheel(e) {
 
 function onDown(e) {
   if (!S || S.busy || e.target !== $('#brushView')) return; // the Fit button is not a brush stroke
-  if (e.button === 1 || e.button === 2 || spaceDown) {
+  if (e.button === 1 || e.button === 2 || spaceDown || moveMode) {
     // Middle or right mouse button, or Space held down: drag to move around the photo.
     e.preventDefault();
     $('#brushStage').setPointerCapture(e.pointerId);
@@ -483,7 +493,7 @@ function onMove(e) {
   }
   if (!S.pointers.has(e.pointerId)) {
     // A mouse or pen hovering (not pressed): show the brush circle so its size is clear.
-    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && S.kind !== 'patch') { S.cursor = e.target === $('#brushView') ? local(e) : null; draw(); }
+    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && S.kind !== 'patch' && !moveMode && !spaceDown) { S.cursor = e.target === $('#brushView') ? local(e) : null; draw(); }
     return;
   }
   e.preventDefault();
@@ -562,20 +572,32 @@ export function initBrush() {
   st.addEventListener('wheel', onWheel, { passive: false });
   st.addEventListener('contextmenu', e => e.preventDefault());
   $$('#brushZoom [data-zoom]').forEach(b => (b.onclick = () => {
+    b.blur(); // so pressing Space afterwards doesn't press this button again
     if (!S) return;
+    if (b.dataset.zoom === 'move') { setMoveMode(!moveMode); S.cursor = null; draw(); return; }
     const { w, h } = stageSize();
     zoomAt(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, w / 2, h / 2);
   }));
+  $('#brushFit').addEventListener('click', e => e.currentTarget.blur());
   // Keyboard: + and - zoom, 0 fits, holding Space lets you drag the photo around.
   window.addEventListener('keydown', e => {
     if (!S || isTyping(e.target)) return;
     const { w, h } = stageSize();
-    if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
+    const step = 60;
+    if (e.key === ' ') { spaceDown = true; e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+    else if (e.key.startsWith('Arrow')) {
+      // Arrow keys move the picture.
+      e.preventDefault();
+      const dx = e.key === 'ArrowLeft' ? step : e.key === 'ArrowRight' ? -step : 0, dy = e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0;
+      S.view = { ...S.view, ox: S.view.ox + dx, oy: S.view.oy + dy };
+      $('#brushFit').hidden = false;
+      draw();
+    }
     else if (e.key === '+' || e.key === '=') zoomAt(1.5, w / 2, h / 2);
     else if (e.key === '-' || e.key === '_') zoomAt(1 / 1.5, w / 2, h / 2);
     else if (e.key === '0') { fit(); draw(); }
   });
-  window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
+  window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; e.preventDefault(); } });
   $('#brushUndo').onclick = onUndo;
   $('#patchApply').onclick = () => { if (S && S.kind === 'patch') { stampPatch(); draw(); } };
   $('#patchFlip').onclick = () => {
@@ -614,4 +636,10 @@ function isTyping(el) {
   if (!el || !el.tagName) return false;
   if (/textarea|select/i.test(el.tagName) || el.isContentEditable) return true;
   return /input/i.test(el.tagName) && !/range|checkbox|radio|button/i.test(el.type);
+}
+
+// Is this wheel event from a mouse wheel (big, whole steps) rather than a trackpad scroll?
+function isMouseWheel(e) {
+  if (e.deltaMode === 1 || e.deltaMode === 2) return true;
+  return e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY);
 }

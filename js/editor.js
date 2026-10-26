@@ -5,7 +5,7 @@ import { renderLayer, layerSize, drawLayer, renderProject, defaultEffects, FILTE
 import { removeBackground } from './ai.js';
 import { detectFaces, matchFaces, faceAt } from './faces.js';
 import { BROW_STYLES, AUTO_FIX, DEFAULT_BROWS, styleParams, matchColor, removeBrows, drawBrows, naturalShapes } from './brows.js';
-import { openBrush } from './brush.js';
+import { openBrush, isMoveMode, setMoveMode } from './brush.js';
 import { RETOUCH_TOOLS } from './retouch.js';
 import { SHAPE_SLIDERS, hasShape } from './faceshape.js';
 import { openText, openCrop, COLORS } from './screens.js';
@@ -313,8 +313,9 @@ function onWheel(e) {
   e.preventDefault();
   const p = local(e);
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) {
-    view = { ...view, ox: view.ox - e.deltaX * unit, zoomed: true };
+  // Mouse wheel and trackpad pinch zoom; trackpad two-finger scroll moves the picture.
+  if (!e.ctrlKey && !isMouseWheel(e)) {
+    view = { ...view, ox: view.ox - e.deltaX * unit, oy: view.oy - e.deltaY * unit, zoomed: true };
     draw();
     return;
   }
@@ -329,7 +330,7 @@ function onDown(e) {
   const p = local(e);
   if (picking) { pickColour(p); return; }
   $('#stage').setPointerCapture(e.pointerId);
-  if (e.button === 1 || e.button === 2 || spaceDown) {
+  if (e.button === 1 || e.button === 2 || spaceDown || isMoveMode()) {
     // Middle or right mouse button, or Space held down: drag to move around the picture.
     pointers.set(e.pointerId, p);
     gesture = { kind: 'pan', x: p.x, y: p.y, ox: view.ox, oy: view.oy };
@@ -1088,18 +1089,27 @@ export function initEditor() {
   st.addEventListener('wheel', onWheel, { passive: false });
   st.addEventListener('contextmenu', e => e.preventDefault());
   $$('#editorZoom [data-zoom]').forEach(b => (b.onclick = () => {
+    b.blur(); // so pressing Space afterwards doesn't press this button again
+    if (b.dataset.zoom === 'move') { setMoveMode(!isMoveMode()); return; }
     const r = stageRect();
     zoomView(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, r.width / 2, r.height / 2);
   }));
   window.addEventListener('keydown', e => {
     if (!P || !$('#editor').classList.contains('active') || isTyping(e.target)) return;
     const r = stageRect();
-    if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
+    if (e.key === ' ') { spaceDown = true; e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+    else if (e.key.startsWith('Arrow') && !sel()) {
+      e.preventDefault();
+      const st = 60, dx = e.key === 'ArrowLeft' ? st : e.key === 'ArrowRight' ? -st : 0, dy = e.key === 'ArrowUp' ? st : e.key === 'ArrowDown' ? -st : 0;
+      view = { ...view, ox: view.ox + dx, oy: view.oy + dy, zoomed: true };
+      draw();
+    }
     else if (e.key === '+' || e.key === '=') zoomView(1.5, r.width / 2, r.height / 2);
     else if (e.key === '-' || e.key === '_') zoomView(1 / 1.5, r.width / 2, r.height / 2);
     else if (e.key === '0') { fit(); draw(); }
   });
-  window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
+  window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; e.preventDefault(); } });
+  $('#fitBtn').addEventListener('click', e => e.currentTarget.blur());
   $('#downloadBtn').onclick = download;
   $('#shareBtn').onclick = share;
   $$('#formatBtns button').forEach(b => (b.onclick = () => {
@@ -1115,4 +1125,10 @@ function isTyping(el) {
   if (!el || !el.tagName) return false;
   if (/textarea|select/i.test(el.tagName) || el.isContentEditable) return true;
   return /input/i.test(el.tagName) && !/range|checkbox|radio|button/i.test(el.type);
+}
+
+// Is this wheel event from a mouse wheel (big, whole steps) rather than a trackpad scroll?
+function isMouseWheel(e) {
+  if (e.deltaMode === 1 || e.deltaMode === 2) return true;
+  return e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY);
 }

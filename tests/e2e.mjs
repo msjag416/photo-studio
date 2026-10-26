@@ -203,6 +203,16 @@ async function run(engine, devName) {
     await page.waitForTimeout(150);
     const moved = await viewInfo();
     if (diff(zoomed, moved) < 1) throw new Error('Right-button drag did not move the picture');
+    // The hand button: left-drag moves the picture instead of painting.
+    await page.locator('#brushZoom [data-zoom=move]').click();
+    const beforeMove = await viewInfo();
+    await page.mouse.move(bx, by);
+    await page.mouse.down();
+    await page.mouse.move(bx - 150, by - 80, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    if (diff(beforeMove, await viewInfo()) < 1) throw new Error('Move (hand) mode did not move the picture');
+    await page.locator('#brushZoom [data-zoom=move]').click(); // back to painting
     const zb = await page.locator('#brushZoom [data-zoom=in]').boundingBox();
     if (!zb || zb.width < 44 || zb.height < 44) throw new Error('Zoom buttons are too small or not styled (' + JSON.stringify(zb) + ')');
     await page.locator('#brushZoom [data-zoom=in]').click();
