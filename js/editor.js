@@ -298,6 +298,29 @@ function local(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
+// ---------- Mouse and trackpad zoom (for computers without touch) ----------
+let spaceDown = false;
+function zoomView(factor, cx, cy) {
+  if (!P) return;
+  const v0 = view;
+  const scale = Math.min(v0.fitScale * 12, Math.max(v0.fitScale * 0.5, v0.scale * factor));
+  const k = scale / v0.scale;
+  view = { ...v0, scale, ox: cx - (cx - v0.ox) * k, oy: cy - (cy - v0.oy) * k, zoomed: true };
+  draw();
+}
+function onWheel(e) {
+  if (!P) return;
+  e.preventDefault();
+  const p = local(e);
+  const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) {
+    view = { ...view, ox: view.ox - e.deltaX * unit, zoomed: true };
+    draw();
+    return;
+  }
+  zoomView(Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.002)), p.x, p.y);
+}
+
 function onDown(e) {
   if (!P || e.target !== $('#view')) return; // taps on floating buttons are not canvas taps
   const r0 = stageRect();
@@ -306,6 +329,13 @@ function onDown(e) {
   const p = local(e);
   if (picking) { pickColour(p); return; }
   $('#stage').setPointerCapture(e.pointerId);
+  if (e.button === 1 || e.button === 2 || spaceDown) {
+    // Middle or right mouse button, or Space held down: drag to move around the picture.
+    pointers.set(e.pointerId, p);
+    gesture = { kind: 'pan', x: p.x, y: p.y, ox: view.ox, oy: view.oy };
+    $('#stage').classList.add('panning');
+    return;
+  }
   pointers.set(e.pointerId, p);
   const L = sel();
   if (pointers.size === 2) {
@@ -343,6 +373,11 @@ function onMove(e) {
   e.preventDefault();
   const p = local(e);
   pointers.set(e.pointerId, p);
+  if (gesture && gesture.kind === 'pan') {
+    view = { ...view, ox: gesture.ox + p.x - gesture.x, oy: gesture.oy + p.y - gesture.y, zoomed: true };
+    draw();
+    return;
+  }
   if (gesture && gesture.kind === 'zoom') {
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -384,7 +419,8 @@ async function onUp(e) {
   if (pointers.size > 0) return;
   const g = gesture;
   gesture = null;
-  if (!g) return;
+  $('#stage').classList.remove('panning');
+  if (!g || g.kind === 'pan') return;
   if (g.moved) commit();
   else if (g.kind === 'move') {
     const L = sel();
@@ -1049,6 +1085,21 @@ export function initEditor() {
   $('#saveBtn').onclick = openSave;
   $('#refineBtn').onclick = doRefine;
   $('#fitBtn').onclick = () => { fit(); draw(); };
+  st.addEventListener('wheel', onWheel, { passive: false });
+  st.addEventListener('contextmenu', e => e.preventDefault());
+  $$('#editorZoom [data-zoom]').forEach(b => (b.onclick = () => {
+    const r = stageRect();
+    zoomView(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, r.width / 2, r.height / 2);
+  }));
+  window.addEventListener('keydown', e => {
+    if (!P || !$('#editor').classList.contains('active') || /input|textarea/i.test(e.target.tagName)) return;
+    const r = stageRect();
+    if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
+    else if (e.key === '+' || e.key === '=') zoomView(1.5, r.width / 2, r.height / 2);
+    else if (e.key === '-' || e.key === '_') zoomView(1 / 1.5, r.width / 2, r.height / 2);
+    else if (e.key === '0') { fit(); draw(); }
+  });
+  window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
   $('#downloadBtn').onclick = download;
   $('#shareBtn').onclick = share;
   $$('#formatBtns button').forEach(b => (b.onclick = () => {

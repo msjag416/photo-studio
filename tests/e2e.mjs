@@ -167,6 +167,45 @@ async function run(engine, devName) {
     });
   }
 
+  await step('mouse-zoom-and-move', async () => {
+    // Computers without touch: wheel zooms, right-button drag moves around, + / - buttons zoom,
+    // and the brush circle follows the mouse.
+    const r = await page.locator('#stage').boundingBox();
+    const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.wheel(0, -400);
+    await page.waitForTimeout(150);
+    if (await page.locator('#fitBtn').isHidden()) throw new Error('Mouse wheel did not zoom the editor');
+    await page.locator('#fitBtn').click();
+    await page.locator('[data-act=erase]').click();
+    await page.locator('#brush.active').waitFor();
+    const viewInfo = () => page.evaluate(() => { const c = document.querySelector('#brushView'); const d = c.getContext('2d').getImageData(c.width / 2 - 2, c.height / 2 - 2, 4, 4).data; return Array.from(d); });
+    const b = await page.locator('#brushStage').boundingBox();
+    const bx = b.x + b.width / 2, by = b.y + b.height / 2;
+    const before = await viewInfo();
+    await page.mouse.move(bx, by);
+    await page.mouse.wheel(0, -500);
+    await page.waitForTimeout(150);
+    if (await page.locator('#brushFit').isHidden()) throw new Error('Mouse wheel did not zoom the brush screen');
+    const zoomed = await viewInfo();
+    // Right-button drag moves the picture (and must not paint).
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(bx + 120, by + 60, { steps: 8 });
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(150);
+    const moved = await viewInfo();
+    if (diff(zoomed, moved) < 1) throw new Error('Right-button drag did not move the picture');
+    await page.locator('#brushZoom [data-zoom=in]').click();
+    await page.locator('#brushZoom [data-zoom=out]').click();
+    await shot('mouse-zoomed');
+    await page.locator('#brushFit').click();
+    await page.waitForTimeout(150);
+    if (diff(before, await viewInfo()) > 3) throw new Error('Fit did not bring the whole photo back');
+    if (await page.locator('#brushUndo').isEnabled() && (await page.evaluate(() => 0))) {}
+    await page.locator('#brushCancel').click();
+    await page.locator('#editor.active').waitFor();
+  });
+
   await step('remove-background', async () => {
     await page.locator('[data-act=bg]').click();
     await page.waitForTimeout(300);

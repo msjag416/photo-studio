@@ -168,3 +168,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 .error-box details { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
 .error-box code { display: block; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 100px); transform: translateX(-50%); padding: 10px 16px; border-radius: 20px; background: var(--ink); color: #fff; font-size: 14px; }
+/* Zoom buttons (mouse and trackpad users; fingers can also pinch) */
+.zoom-btns { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; z-index: 2; }
+.zoom-btn { min-width: 40px; height: 40px; padding: 0 12px; border-radius: 20px; background: var(--card); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 20px; font-weight: 600; line-height: 1; }
+.zoom-btn.fit { font-size: 14px; color: var(--accent); }
+.brush-stage.panning, .stage.panning { cursor: grabbing; }

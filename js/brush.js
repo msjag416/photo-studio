@@ -395,8 +395,44 @@ function local(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
+// ---------- Mouse and trackpad zoom (for computers without touch) ----------
+let spaceDown = false;
+function zoomAt(factor, cx, cy) {
+  if (!S || !S.view) return;
+  const v0 = S.view;
+  const scale = Math.min(S.fitScale * 16, Math.max(S.fitScale * 0.5, v0.scale * factor));
+  const k = scale / v0.scale;
+  S.view = { scale, ox: cx - (cx - v0.ox) * k, oy: cy - (cy - v0.oy) * k };
+  $('#brushFit').hidden = false;
+  if (S.kind === 'patch') { /* circles stay the same size on the photo */ }
+  draw();
+}
+function onWheel(e) {
+  if (!S) return;
+  e.preventDefault();
+  const p = local(e);
+  const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+  // Trackpad pinch arrives as a wheel with the Ctrl key; a mouse wheel zooms too.
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) {
+    S.view = { ...S.view, ox: S.view.ox - e.deltaX * unit };
+    $('#brushFit').hidden = false;
+    draw();
+    return;
+  }
+  zoomAt(Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.002)), p.x, p.y);
+}
+
 function onDown(e) {
   if (!S || S.busy || e.target !== $('#brushView')) return; // the Fit button is not a brush stroke
+  if (e.button === 1 || e.button === 2 || spaceDown) {
+    // Middle or right mouse button, or Space held down: drag to move around the photo.
+    e.preventDefault();
+    $('#brushStage').setPointerCapture(e.pointerId);
+    const p = local(e);
+    S.pan = { id: e.pointerId, x: p.x, y: p.y, ox: S.view.ox, oy: S.view.oy };
+    $('#brushStage').classList.add('panning');
+    return;
+  }
   e.preventDefault();
   $('#brushStage').setPointerCapture(e.pointerId);
   S.pointers.set(e.pointerId, local(e));
@@ -437,7 +473,19 @@ function cancelStroke() {
 }
 
 function onMove(e) {
-  if (!S || !S.pointers.has(e.pointerId)) return;
+  if (!S) return;
+  if (S.pan && S.pan.id === e.pointerId) {
+    const p = local(e);
+    S.view = { ...S.view, ox: S.pan.ox + p.x - S.pan.x, oy: S.pan.oy + p.y - S.pan.y };
+    $('#brushFit').hidden = false;
+    draw();
+    return;
+  }
+  if (!S.pointers.has(e.pointerId)) {
+    // A mouse or pen hovering (not pressed): show the brush circle so its size is clear.
+    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && S.kind !== 'patch') { S.cursor = local(e); draw(); }
+    return;
+  }
   e.preventDefault();
   const p = local(e);
   S.pointers.set(e.pointerId, p);
@@ -461,6 +509,7 @@ function onMove(e) {
 }
 
 async function onUp(e) {
+  if (S && S.pan && S.pan.id === e.pointerId) { S.pan = null; $('#brushStage').classList.remove('panning'); return; }
   if (!S || !S.pointers.has(e.pointerId)) return;
   S.pointers.delete(e.pointerId);
   if (S.pointers.size === 0) {
@@ -509,6 +558,24 @@ export function initBrush() {
   st.addEventListener('pointermove', onMove);
   st.addEventListener('pointerup', onUp);
   st.addEventListener('pointercancel', onUp);
+  st.addEventListener('pointerleave', e => { if (S && !S.pointers.size && e.pointerType !== 'touch') { S.cursor = null; draw(); } });
+  st.addEventListener('wheel', onWheel, { passive: false });
+  st.addEventListener('contextmenu', e => e.preventDefault());
+  $$('#brushZoom [data-zoom]').forEach(b => (b.onclick = () => {
+    if (!S) return;
+    const { w, h } = stageSize();
+    zoomAt(b.dataset.zoom === 'in' ? 1.5 : 1 / 1.5, w / 2, h / 2);
+  }));
+  // Keyboard: + and - zoom, 0 fits, holding Space lets you drag the photo around.
+  window.addEventListener('keydown', e => {
+    if (!S || /input|textarea/i.test(e.target.tagName)) return;
+    const { w, h } = stageSize();
+    if (e.key === ' ') { spaceDown = true; e.preventDefault(); }
+    else if (e.key === '+' || e.key === '=') zoomAt(1.5, w / 2, h / 2);
+    else if (e.key === '-' || e.key === '_') zoomAt(1 / 1.5, w / 2, h / 2);
+    else if (e.key === '0') { fit(); draw(); }
+  });
+  window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
   $('#brushUndo').onclick = onUndo;
   $('#patchApply').onclick = () => { if (S && S.kind === 'patch') { stampPatch(); draw(); } };
   $('#patchFlip').onclick = () => {
