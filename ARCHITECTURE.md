@@ -89,7 +89,7 @@ On every brush screen, two fingers zoom up to 16 times and move around, so small
 
 **Undo and redo.** After every finished action, such as letting go of a slider, finishing a move or applying a brush, the editor saves a copy of all layer settings, up to 30 steps. Pictures themselves are never edited in place. Every tool makes a new picture, so the steps can share pictures and use little memory.
 
-**Saving.** Save draws the whole project at full size. PNG keeps see-through areas. JPG puts a white background behind them. On iPhone and iPad a "Share or save to Photos" button also appears.
+**Saving.** Save draws the whole project at full size. It always saves a PNG picture, which keeps see-through areas. On iPhone and iPad a "Share or save to Photos" button also appears.
 
 **Projects on the device.** When you leave the editor (or switch apps), the project is saved in the browser's own database on your device, along with a small preview. It then shows under "Recent projects" on the home screen. Clearing your browser data removes these.
 
@@ -107,7 +107,7 @@ Every error shows a box in plain words with a short "Details" line, instead of f
 
 ## Testing
 
-`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, every Retouch tool, outline, shadow, filter, text, undo/redo, save PNG and JPG, and back to home. For each Retouch tool, it brushes the right spot on the face (cheek, teeth, eyes, under the eyes, lips, cheeks, hair, jaw) and checks that the pixels there changed while a patch of plain background did not. It takes a screenshot of every step, plus close-ups of the face. It then opens `tests/two-people.jpg` and does these checks:
+`tests/e2e.mjs` opens the app in the Safari engine (WebKit) and the Chrome engine (Chromium) at iPad and iPhone sizes. It uses a public domain NASA portrait (`tests/person.png`) and goes through: open photo, remove background, refine edges, remove an object, every Retouch tool, outline, shadow, filter, text, undo/redo, save as PNG, and back to home. For each Retouch tool, it brushes the right spot on the face (cheek, teeth, eyes, under the eyes, lips, cheeks, hair, jaw) and checks that the pixels there changed while a patch of plain background did not. It takes a screenshot of every step, plus close-ups of the face. It then opens `tests/two-people.jpg` and does these checks:
 * It finds both faces, and tapping each face selects it.
 * With Face 1 selected, it brushes across both faces, then uses Auto Fix Brows, a style, a slider, a colour, Hold to see before, undo, redo and Reset brows.
 * It saves the picture and checks that Face 1 changed while Face 2 is identical to the original photo.

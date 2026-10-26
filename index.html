@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#FAF7F2">
 <title>Photo Studio</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="css/app.css?v=202610261700">
+<link rel="stylesheet" href="css/app.css?v=202610261900">
 </head>
 <body>
 
@@ -149,10 +149,7 @@
 <div class="sheet-wrap" id="saveSheet" hidden>
   <div class="sheet">
     <div class="sheet-head"><b>Save your picture</b><button class="icon-btn" data-close aria-label="Close"><i data-icon="close"></i></button></div>
-    <div class="seg wide" id="formatBtns">
-      <button data-format="png" class="on">PNG<small>keeps see-through areas</small></button>
-      <button data-format="jpg">JPG<small>smaller file, white background</small></button>
-    </div>
+    <p style="margin: 4px 0 14px; color: var(--muted); font-size: 15px;">Saved as a PNG picture, which keeps see-through areas.</p>
     <button class="primary" id="downloadBtn">Download</button>
     <button class="secondary" id="shareBtn" hidden>Share or save to Photos</button>
   </div>
@@ -170,6 +167,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="js/main.js?v=202610261700"></script>
+<script type="module" src="js/main.js?v=202610261900"></script>
 </body>
 </html>

@@ -21,7 +21,6 @@ let view = { scale: 1, ox: 0, oy: 0 };
 let hist = { stack: [], idx: -1 };
 let picking = null;    // eyedropper callback
 let onExit = null;
-let saveFormat = 'png';
 
 const sel = () => (P ? P.layers.find(l => l.id === selId) : null);
 
@@ -1022,10 +1021,10 @@ function openLayers() {
 async function exportBlob() {
   busy('Making your picture…');
   await nextFrame();
-  const c = renderProject(P, { background: saveFormat === 'jpg' ? '#FFFFFF' : null });
-  const blob = saveFormat === 'jpg' ? await canvasToBlob(c, 'image/jpeg', 0.92) : await canvasToBlob(c, 'image/png');
+  const c = renderProject(P, { background: null });
+  const blob = await canvasToBlob(c, 'image/png');
   busy(false);
-  const name = `photo-studio-${new Date().toISOString().slice(0, 10)}.${saveFormat}`;
+  const name = `photo-studio-${new Date().toISOString().slice(0, 10)}.png`;
   return { blob, name };
 }
 async function download() {
@@ -1112,10 +1111,6 @@ export function initEditor() {
   $('#fitBtn').addEventListener('click', e => e.currentTarget.blur());
   $('#downloadBtn').onclick = download;
   $('#shareBtn').onclick = share;
-  $$('#formatBtns button').forEach(b => (b.onclick = () => {
-    saveFormat = b.dataset.format;
-    $$('#formatBtns button').forEach(x => x.classList.toggle('on', x === b));
-  }));
   window.addEventListener('resize', () => { if (P) { fit(); draw(); } });
   fillIcons();
 }

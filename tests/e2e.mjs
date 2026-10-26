@@ -483,17 +483,17 @@ async function run(engine, devName) {
     await page.waitForTimeout(300);
   });
 
-  for (const fmt of ['png', 'jpg']) {
-    await step('save-' + fmt, async () => {
-      await page.locator('#saveBtn').click();
-      await page.locator(`#formatBtns [data-format=${fmt}]`).click();
-      const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.locator('#downloadBtn').click()]);
-      const file = `${OUT}/${tag}-saved.${fmt}`;
-      await dl.saveAs(file);
-      const size = fs.statSync(file).size;
-      if (size < 5000) throw new Error('Saved file looks empty: ' + size + ' bytes');
-    });
-  }
+  await step('save-png', async () => {
+    await page.locator('#saveBtn').click();
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.locator('#downloadBtn').click()]);
+    if (!dl.suggestedFilename().endsWith('.png')) throw new Error('File name is not .png: ' + dl.suggestedFilename());
+    const file = `${OUT}/${tag}-saved.png`;
+    await dl.saveAs(file);
+    const head = fs.readFileSync(file).subarray(0, 8).toString('hex');
+    if (head !== '89504e470d0a1a0a') throw new Error('Saved file is not a PNG');
+    const size = fs.statSync(file).size;
+    if (size < 5000) throw new Error('Saved file looks empty: ' + size + ' bytes');
+  });
 
   await step('back-home-recent', async () => {
     await page.locator('#backBtn').click();
@@ -650,7 +650,6 @@ async function run(engine, devName) {
 
   await step('faces-save-other-face-untouched', async () => {
     await page.locator('#saveBtn').click();
-    await page.locator('#formatBtns [data-format=png]').click();
     const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.locator('#downloadBtn').click()]);
     const file = `${OUT}/${tag}-two-faces.png`;
     await dl.saveAs(file);
