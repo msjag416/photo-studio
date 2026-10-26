@@ -167,13 +167,21 @@ async function run(engine, devName) {
     });
   }
 
+  // Roll the mouse wheel at a point. The iPad/iPhone test browser (mobile WebKit) has no mouse
+  // wheel, so there the same wheel signal is sent to the app directly.
+  const wheelAt = async (x, y, dy) => {
+    if (engine !== 'webkit') { await page.mouse.move(x, y); await page.mouse.wheel(0, dy); return; }
+    await page.evaluate(([x, y, dy]) => {
+      const el = document.elementFromPoint(x, y);
+      el.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, deltaY: dy, bubbles: true, cancelable: true }));
+    }, [x, y, dy]);
+  };
   await step('mouse-zoom-and-move', async () => {
     // Computers without touch: wheel zooms, right-button drag moves around, + / - buttons zoom,
     // and the brush circle follows the mouse.
     const r = await page.locator('#stage').boundingBox();
     const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-    await page.mouse.move(cx, cy);
-    await page.mouse.wheel(0, -400);
+    await wheelAt(cx, cy, -400);
     await page.waitForTimeout(150);
     if (await page.locator('#fitBtn').isHidden()) throw new Error('Mouse wheel did not zoom the editor');
     await page.locator('#fitBtn').click();
@@ -184,7 +192,7 @@ async function run(engine, devName) {
     const bx = b.x + b.width / 2, by = b.y + b.height / 2;
     const before = await viewInfo();
     await page.mouse.move(bx, by);
-    await page.mouse.wheel(0, -500);
+    await wheelAt(bx, by, -500);
     await page.waitForTimeout(150);
     if (await page.locator('#brushFit').isHidden()) throw new Error('Mouse wheel did not zoom the brush screen');
     const zoomed = await viewInfo();
